@@ -1,0 +1,2 @@
+# Explainer Agent — Prompt
+# Purpose: produce a plain-English explanation of the solver result and a LaTeX model.
