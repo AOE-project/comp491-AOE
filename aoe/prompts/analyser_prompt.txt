@@ -1,0 +1,5 @@
+# Analyser Agent Prompt v1
+# Purpose: iterative clarification dialogue to extract a structural MILP formulation.
+# NOTE: This prompt doesn't request or reference numerical data values.
+#       The LLM reasons over structure only (sets, parameters names/types/dimensions,
+#       variable types, constraint expressions). Numerical data is uploaded separately.

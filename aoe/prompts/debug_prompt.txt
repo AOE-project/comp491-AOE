@@ -1,0 +1,2 @@
+# Debug Agent Prompt
+# Purpose: diagnose and correct a Gurobi script given the error message or script.

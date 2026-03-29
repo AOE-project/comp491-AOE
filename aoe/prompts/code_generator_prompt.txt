@@ -1,0 +1,5 @@
+# CodeGenerator Agent Prompt
+# Purpose: translate a validated structural MILP model dict into a Gurobi Python script.
+# Input context: milp_model (structure only) + data_key reference for the uploaded data file.
+
+[PLACEHOLDER — replace with full system prompt before first run]
