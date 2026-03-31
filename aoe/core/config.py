@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     gurobi_license_path: str = ""
     log_level: str = "INFO"
     log_output_dir: str = "./logs"
+    use_dummy_analyser: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

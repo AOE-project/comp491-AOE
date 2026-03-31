@@ -86,7 +86,14 @@ python3 -m ui.cli.main
 can try with question:
 I want to minimise the total shipping cost from three warehouses to four retail stores. Each warehouse has a limited supply and each store has a  fixed demand. I need to decide how much to ship from each warehouse to each store.
 
-### 6. Launch the Gradio UI
+### 6. UI development without API calls (dummy mode)
+
+Set `USE_DUMMY_ANALYSER=true` in `.env` to replace the Analyser agent with a hardcoded stub.
+The stub simulates two dialogue turns — returning questions on turn 1 and a completed model on
+turn 2 — so the full CLI/Gradio conversation flow can be exercised without spending OpenAI tokens.
+Useful when building or testing the UI layer independently of the LLM.
+
+### 7. Launch the Gradio UI
 
 ```bash
 python3 -m ui.gradio.app
