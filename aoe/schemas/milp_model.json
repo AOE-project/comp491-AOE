@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "milp_model",
+  "title": "MILPModel",
+  "description": "Structural representation of a Mixed-Integer Linear Program extracted by the Analyser agent. Contains only structural definitions (names, types, dimensions). Numerical data is uploaded separately and referenced via data_key.",
+  "type": "object",
+  "required": ["sets", "parameters", "variables", "objective", "constraints"],
+  "additionalProperties": false,
+  "properties": {
+    "sets": {
+      "type": "array",
+      "description": "Index sets used in the model (e.g. customers, facilities).",
+      "items": {
+        "type": "object",
+        "required": ["name", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "name":        { "type": "string", "description": "Symbolic name, e.g. 'I'" },
+          "description": { "type": "string", "description": "Human-readable description" },
+          "elements":    { "type": "array", "items": {}, "description": "Optional explicit element labels (no numeric values)" }
+        }
+      }
+    },
+    "tuples": {
+      "type": "array",
+      "description": "Cartesian-product index sets (e.g. arcs (i,j) in a network).",
+      "items": {
+        "type": "object",
+        "required": ["name", "description", "component_sets"],
+        "additionalProperties": false,
+        "properties": {
+          "name":           { "type": "string" },
+          "description":    { "type": "string" },
+          "component_sets": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Names of the sets whose cross-product forms this tuple set"
+          }
+        }
+      }
+    },
+    "parameters": {
+      "type": "array",
+      "description": "Input data parameters. No numerical values stored here; values are uploaded separately and referenced by data_key.",
+      "items": {
+        "type": "object",
+        "required": ["name", "description", "index_sets"],
+        "additionalProperties": false,
+        "properties": {
+          "name":        { "type": "string" },
+          "description": { "type": "string" },
+          "index_sets":  { "type": "array", "items": { "type": "string" } },
+          "shape": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Ordered list of dimension set names, e.g. ['I'] or ['I','J']"
+          },
+          "data_key": {
+            "type": "string",
+            "description": "Key that references this parameter's values in the separately-uploaded data file"
+          }
+        }
+      }
+    },
+    "variables": {
+      "type": "array",
+      "description": "Decision variables of the model.",
+      "items": {
+        "type": "object",
+        "required": ["name", "description", "type", "index_sets"],
+        "additionalProperties": false,
+        "properties": {
+          "name":        { "type": "string" },
+          "description": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["continuous", "binary", "integer"],
+            "description": "Variable domain type"
+          },
+          "index_sets": { "type": "array", "items": { "type": "string" } },
+          "lb": {
+            "type": ["number", "string", "null"],
+            "description": "Lower bound: a literal number (e.g. 0), a parameter reference string, or null for -inf"
+          },
+          "ub": {
+            "type": ["number", "string", "null"],
+            "description": "Upper bound: a literal number (e.g. 1), a parameter reference string, or null for +inf"
+          }
+        }
+      }
+    },
+    "objective": {
+      "type": "object",
+      "required": ["sense", "expression"],
+      "additionalProperties": false,
+      "description": "Objective function specification.",
+      "properties": {
+        "sense": {
+          "type": "string",
+          "enum": ["minimize", "maximize"]
+        },
+        "expression": {
+          "type": "string",
+          "description": "Symbolic expression string, e.g. 'sum_{i in I} c[i] * x[i]'"
+        }
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "description": "List of model constraints.",
+      "items": {
+        "type": "object",
+        "required": ["name", "description", "expression"],
+        "additionalProperties": false,
+        "properties": {
+          "name":        { "type": "string" },
+          "description": { "type": "string" },
+          "expression":  {
+            "type": "string",
+            "description": "Symbolic constraint expression, e.g. 'sum_{j in J} x[i][j] <= cap[i]  for all i in I'"
+          },
+          "index_sets":  { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}
