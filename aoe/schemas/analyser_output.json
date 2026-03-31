@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "analyser_output",
+  "title": "AnalyserOutput",
+  "description": "Full output produced by the Analyser agent each turn. Contains the structural MILP model plus dialogue-tracking fields.",
+  "type": "object",
+  "required": [
+    "milp_model",
+    "confirmed_assumptions",
+    "unconfirmed_assumptions",
+    "open_questions",
+    "analysis_summary",
+    "technical_summary"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "milp_model": {
+      "$ref": "milp_model.json",
+      "description": "Structural MILP model extracted so far. May be partial during early turns."
+    },
+    "confirmed_assumptions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Assumptions the user has explicitly confirmed."
+    },
+    "unconfirmed_assumptions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Assumptions the agent has made but the user has not yet confirmed. Each must have a corresponding entry in open_questions."
+    },
+    "open_questions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Clarifying questions for the user. Empty means the agent is ready for final approval."
+    },
+    "analysis_summary": {
+      "type": "string",
+      "description": "Plain-English summary of the model for the user. No symbolic math or technical column names."
+    },
+    "technical_summary": {
+      "type": "string",
+      "description": "Technical summary including symbolic expressions and parameter names, for internal use and CodeGenerator context."
+    }
+  }
+}

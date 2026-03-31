@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aoe"
+version = "0.1.0"
+description = "Automated Optimization Engineer — multi-agent MILP automation system"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph",
+    "langchain",
+    "langchain-openai",
+    "openai",
+    "gurobipy",
+    "pydantic",
+    "gradio",
+    "typer",
+    "rich",
+    "python-dotenv",
+    "pydantic-settings",
+    "jsonschema",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agents*", "core*", "graph*", "middleware*", "solver*", "ui*"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+    "mypy",
+]
