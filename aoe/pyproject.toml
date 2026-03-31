@@ -19,6 +19,7 @@ dependencies = [
     "rich",
     "python-dotenv",
     "pydantic-settings",
+    "jsonschema",
 ]
 
 [tool.setuptools.packages.find]

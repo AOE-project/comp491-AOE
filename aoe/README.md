@@ -83,6 +83,9 @@ python3 -m pytest tests/test_llm_connection.py -v -s
 python3 -m ui.cli.main
 ```
 
+can try with question:
+I want to minimise the total shipping cost from three warehouses to four retail stores. Each warehouse has a limited supply and each store has a  fixed demand. I need to decide how much to ship from each warehouse to each store.
+
 ### 6. Launch the Gradio UI
 
 ```bash
