@@ -1,7 +1,319 @@
 """
-ui/gradio/app.py — Gradio Blocks web application (GradioApp) and component builders.
+ui/gradio/app.py — Gradio UI for AOE.
 
-GradioApp builds the layout, wires event handlers to AOEHandle.run(), and renders
-streamed Event objects into the chat panel and viewers. Run as __main__ to launch
-the Gradio server.
+Professional dark-mode chat interface for MILP model refinement.
+Runs everything in a single process.
+
+Run with:
+    python -m ui.gradio.app
 """
+import gradio as gr
+import sys
+from pathlib import Path
+from typing import Optional
+from middleware.handle import AOEHandle
+
+sys.path.append(str(Path(__file__).parent.parent.parent))
+
+# ============ GLOBAL STATE ============
+_aoe_handle = AOEHandle()
+_current_state: Optional[dict] = None
+
+# ============ CORE FUNCTIONS ============
+
+def _build_bot_text(state: dict) -> str:
+    """
+    Compose the assistant bubble: analysis_summary + open_questions.
+    This way the user sees both the current model understanding AND
+    what needs to be clarified next.
+    """
+    parts = []
+    summary = (state.get("analysis_summary") or "").strip()
+    if summary:
+        parts.append(summary)
+    questions = state.get("open_questions") or []
+    if questions:
+        parts.append("**Please clarify the following:**")
+        for q in questions:
+            parts.append(f"- {q}")
+    return "\n\n".join(parts) if parts else "Processing..."
+
+
+def _process_message(user_message: str, chat_history: list):
+    global _current_state
+
+    if not user_message.strip():
+        return "", chat_history, *(["*Waiting...*"] * 3)
+
+    try:
+        # AOEHandle.run() appends the user message to state["history"] internally.
+        # We do NOT manually touch chat_history for the user turn here;
+        # instead we rebuild it fully from state after the backend returns,
+        # so UI history is always in sync with the real GraphState history.
+        _current_state = _aoe_handle.run(user_message, _current_state)
+
+        if not _current_state:
+            bot_text = "No response from backend."
+        else:
+            bot_text = _build_bot_text(_current_state)
+
+        # Rebuild chat history from GraphState so multi-turn stays consistent
+        new_history = []
+        for msg in (_current_state or {}).get("history", []):
+            role    = msg.get("role", "user")
+            content = msg.get("content", "")
+            new_history.append({"role": role, "content": content})
+        new_history.append({"role": "assistant", "content": bot_text})
+
+        model_info, conf, unconf = _format_sidebar(_current_state or {})
+        return "", new_history, model_info, conf, unconf
+
+    except Exception as e:
+        err = f"**Error:** {str(e)}"
+        chat_history.append({"role": "assistant", "content": err})
+        return "", chat_history, "—", "—", "—"
+
+
+def _format_sidebar(state: dict):
+    """Build the three sidebar markdown panels from GraphState."""
+    milp = state.get("milp_model") or {}
+
+    if milp:
+        sets_count  = len(milp.get("sets",       []))
+        param_count = len(milp.get("parameters", []))
+        var_count   = len(milp.get("variables",  []))
+        obj         = milp.get("objective_type", "—")
+        model_text = (
+            f"| Metric | Value |\n"
+            f"|--------|-------|\n"
+            f"| Objective | `{obj}` |\n"
+            f"| Sets | `{sets_count}` |\n"
+            f"| Parameters | `{param_count}` |\n"
+            f"| Variables | `{var_count}` |\n"
+        )
+    else:
+        model_text = "*Model not yet generated.*"
+
+    def fmt(items, icon):
+        if not items:
+            return "*None yet.*"
+        return "\n\n".join(f"{icon} {i}" for i in items)
+
+    confirmed   = fmt(state.get("confirmed_assumptions",   []), "✔")
+    unconfirmed = fmt(state.get("unconfirmed_assumptions", []), "?")
+    return model_text, confirmed, unconfirmed
+
+
+# ============ CSS ============
+
+custom_css = """
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap');
+
+:root {
+    --aoe-bg:      #0D1B2A;
+    --aoe-surface: #152233;
+    --aoe-card:    #1C2E40;
+    --aoe-b0:      rgba(255,255,255,0.07);
+    --aoe-b1:      rgba(255,255,255,0.14);
+    --aoe-accent:  #2E7DD1;
+    --aoe-asoft:   rgba(46,125,209,0.13);
+    --aoe-t0:      #EFF3F8;
+    --aoe-t1:      #8BA3BC;
+    --aoe-t2:      #4A6278;
+}
+
+body, html { background: var(--aoe-bg) !important; }
+
+.gradio-container {
+    background: var(--aoe-bg) !important;
+    max-width: 100% !important;
+    font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif !important;
+}
+
+.contain, .gap, .form, .block, .wrap, .panel {
+    background: transparent !important;
+    border-color: var(--aoe-b0) !important;
+}
+
+body, .gradio-container,
+p, span, label, h1, h2, h3, h4, h5, li, td, th {
+    color: var(--aoe-t0) !important;
+    font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif !important;
+}
+
+.aoe-title {
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+    text-align: center !important;
+    color: var(--aoe-t0) !important;
+    padding: 12px 0 !important;
+    border-bottom: 1px solid var(--aoe-b1) !important;
+    margin-bottom: 4px !important;
+}
+
+.chatbot, [data-testid="chatbot"] {
+    background: var(--aoe-surface) !important;
+    border: 1px solid var(--aoe-b1) !important;
+    border-radius: 10px !important;
+}
+
+.message { border-radius: 8px !important; padding: 10px 14px !important; }
+.message.user {
+    background: var(--aoe-asoft) !important;
+    border: 1px solid rgba(46,125,209,0.3) !important;
+}
+.message.bot, .message.assistant {
+    background: var(--aoe-card) !important;
+    border: 1px solid var(--aoe-b0) !important;
+}
+.avatar-container { background: var(--aoe-card) !important; }
+
+textarea, input[type="text"] {
+    background: var(--aoe-card) !important;
+    color: var(--aoe-t0) !important;
+    border: 1px solid var(--aoe-b1) !important;
+    border-radius: 8px !important;
+    font-size: 13px !important;
+    font-family: 'IBM Plex Sans', sans-serif !important;
+    padding: 10px 14px !important;
+}
+textarea:focus, input:focus {
+    border-color: var(--aoe-accent) !important;
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(46,125,209,0.18) !important;
+}
+textarea::placeholder, input::placeholder { color: var(--aoe-t2) !important; }
+
+button {
+    font-family: 'IBM Plex Sans', sans-serif !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.06em !important;
+    text-transform: uppercase !important;
+    border-radius: 7px !important;
+    cursor: pointer !important;
+}
+button.primary, [class*="primary"]:not(.message) {
+    background: var(--aoe-accent) !important;
+    color: #fff !important;
+    border: none !important;
+}
+button.secondary, [class*="secondary"]:not(.message) {
+    background: transparent !important;
+    color: var(--aoe-t1) !important;
+    border: 1px solid var(--aoe-b1) !important;
+}
+button.secondary:hover { background: var(--aoe-card) !important; color: var(--aoe-t0) !important; }
+
+.sidebar-card {
+    background: var(--aoe-card) !important;
+    border: 1px solid var(--aoe-b0) !important;
+    border-radius: 8px !important;
+    padding: 12px 14px !important;
+    margin-bottom: 2px !important;
+}
+.sidebar-card p, .sidebar-card li { color: var(--aoe-t1) !important; font-size: 12px !important; }
+.sidebar-card code {
+    color: var(--aoe-accent) !important;
+    background: var(--aoe-asoft) !important;
+    border-radius: 3px !important;
+    padding: 1px 5px !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 11px !important;
+}
+.sidebar-card table { width: 100% !important; border-collapse: collapse !important; }
+.sidebar-card th {
+    font-size: 10px !important;
+    letter-spacing: 0.07em !important;
+    text-transform: uppercase !important;
+    color: var(--aoe-t2) !important;
+    border-bottom: 1px solid var(--aoe-b1) !important;
+    padding: 4px 6px !important;
+}
+.sidebar-card td {
+    font-size: 12px !important;
+    color: var(--aoe-t1) !important;
+    padding: 5px 6px !important;
+    border-bottom: 1px solid var(--aoe-b0) !important;
+}
+
+h3 {
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+    color: var(--aoe-t2) !important;
+    margin: 14px 0 4px !important;
+}
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--aoe-bg); }
+::-webkit-scrollbar-thumb { background: var(--aoe-b1); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--aoe-accent); }
+
+footer, .footer { display: none !important; }
+"""
+
+# ============ GRADIO UI ============
+
+with gr.Blocks(title="AOE — Automated Optimization Engineer") as demo:
+
+    gr.Markdown("<p class='aoe-title'>AOE &nbsp;/&nbsp; Automated Optimization Engineer</p>")
+
+    with gr.Row(equal_height=True):
+
+        # LEFT: Chat
+        with gr.Column(scale=3):
+            chatbot = gr.Chatbot(label="", height=490, show_label=False)
+            with gr.Row():
+                msg_input = gr.Textbox(
+                    show_label=False,
+                    placeholder="Describe your optimization problem...",
+                    scale=9,
+                    lines=1,
+                    max_lines=1,
+                )
+                send_btn = gr.Button("Send", variant="primary", scale=1, min_width=80)
+
+        # RIGHT: Sidebar
+        with gr.Column(scale=1, min_width=230):
+
+            gr.Markdown("### Model Structure")
+            model_display = gr.Markdown(
+                value="*Waiting for input...*",
+                elem_classes=["sidebar-card"],
+            )
+
+            gr.Markdown("### Confirmed")
+            confirmed_display = gr.Markdown(
+                value="*None yet.*",
+                elem_classes=["sidebar-card"],
+            )
+
+            gr.Markdown("### Pending Review")
+            unconfirmed_display = gr.Markdown(
+                value="*None yet.*",
+                elem_classes=["sidebar-card"],
+            )
+
+            reset_btn = gr.Button("New Session", variant="secondary")
+
+    # Bindings
+    all_outputs = [msg_input, chatbot, model_display, confirmed_display, unconfirmed_display]
+    send_btn.click(fn=_process_message, inputs=[msg_input, chatbot], outputs=all_outputs)
+    msg_input.submit(fn=_process_message, inputs=[msg_input, chatbot], outputs=all_outputs)
+
+    def reset_session():
+        global _current_state
+        _current_state = None
+        return [], "", "*Waiting for input...*", "*None yet.*", "*None yet.*"
+
+    reset_btn.click(
+        fn=reset_session,
+        outputs=[chatbot, msg_input, model_display, confirmed_display, unconfirmed_display],
+    )
+
+if __name__ == "__main__":
+    demo.launch(server_name="127.0.0.1", server_port=7860, css=custom_css)
