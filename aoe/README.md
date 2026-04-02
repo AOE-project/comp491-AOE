@@ -88,6 +88,8 @@ python3 -m pytest tests/test_llm_connection.py -v -s
 
 ```bash
 python3 -m ui.cli.main
+    #for windows
+    python -m ui.cli.main
 ```
 
 can try with question:
@@ -104,4 +106,7 @@ Useful when building or testing the UI layer independently of the LLM.
 
 ```bash
 python3 -m ui.gradio.app
+    #for windows
+    python -m ui.gradio.app
+
 ```

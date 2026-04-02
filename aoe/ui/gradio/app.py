@@ -7,6 +7,14 @@ Runs everything in a single process.
 Run with:
     python -m ui.gradio.app
 """
+"""
+ui/gradio/app.py — Gradio UI for AOE.
+
+Professional dark-mode chat interface for MILP model refinement.
+
+Run with:
+    python -m ui.gradio.app
+"""
 import gradio as gr
 import sys
 from pathlib import Path
@@ -16,18 +24,13 @@ from middleware.handle import AOEHandle
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 # ============ GLOBAL STATE ============
-_aoe_handle = AOEHandle()
+_aoe_handle   = AOEHandle()
 _current_state: Optional[dict] = None
 
 # ============ CORE FUNCTIONS ============
 
 def _build_bot_text(state: dict) -> str:
-    """
-    Compose the assistant bubble: analysis_summary + open_questions.
-    This way the user sees both the current model understanding AND
-    what needs to be clarified next.
-    """
-    parts = []
+    parts   = []
     summary = (state.get("analysis_summary") or "").strip()
     if summary:
         parts.append(summary)
@@ -39,57 +42,17 @@ def _build_bot_text(state: dict) -> str:
     return "\n\n".join(parts) if parts else "Processing..."
 
 
-def _process_message(user_message: str, chat_history: list):
-    global _current_state
-
-    if not user_message.strip():
-        return "", chat_history, *(["*Waiting...*"] * 3)
-
-    try:
-        # AOEHandle.run() appends the user message to state["history"] internally.
-        # We do NOT manually touch chat_history for the user turn here;
-        # instead we rebuild it fully from state after the backend returns,
-        # so UI history is always in sync with the real GraphState history.
-        _current_state = _aoe_handle.run(user_message, _current_state)
-
-        if not _current_state:
-            bot_text = "No response from backend."
-        else:
-            bot_text = _build_bot_text(_current_state)
-
-        # Rebuild chat history from GraphState so multi-turn stays consistent
-        new_history = []
-        for msg in (_current_state or {}).get("history", []):
-            role    = msg.get("role", "user")
-            content = msg.get("content", "")
-            new_history.append({"role": role, "content": content})
-        new_history.append({"role": "assistant", "content": bot_text})
-
-        model_info, conf, unconf = _format_sidebar(_current_state or {})
-        return "", new_history, model_info, conf, unconf
-
-    except Exception as e:
-        err = f"**Error:** {str(e)}"
-        chat_history.append({"role": "assistant", "content": err})
-        return "", chat_history, "—", "—", "—"
-
-
 def _format_sidebar(state: dict):
-    """Build the three sidebar markdown panels from GraphState."""
     milp = state.get("milp_model") or {}
-
     if milp:
-        sets_count  = len(milp.get("sets",       []))
-        param_count = len(milp.get("parameters", []))
-        var_count   = len(milp.get("variables",  []))
-        obj         = milp.get("objective_type", "—")
+        obj   = milp.get("objective_type", "—")
         model_text = (
             f"| Metric | Value |\n"
             f"|--------|-------|\n"
             f"| Objective | `{obj}` |\n"
-            f"| Sets | `{sets_count}` |\n"
-            f"| Parameters | `{param_count}` |\n"
-            f"| Variables | `{var_count}` |\n"
+            f"| Sets | `{len(milp.get('sets', []))}` |\n"
+            f"| Parameters | `{len(milp.get('parameters', []))}` |\n"
+            f"| Variables | `{len(milp.get('variables', []))}` |\n"
         )
     else:
         model_text = "*Model not yet generated.*"
@@ -102,6 +65,61 @@ def _format_sidebar(state: dict):
     confirmed   = fmt(state.get("confirmed_assumptions",   []), "✔")
     unconfirmed = fmt(state.get("unconfirmed_assumptions", []), "?")
     return model_text, confirmed, unconfirmed
+
+
+def _process_message(user_message: str, chat_history: list):
+    """Handle a normal chat message turn."""
+    global _current_state
+
+    if not user_message.strip():
+        return "", chat_history, gr.update(visible=False), *(["*Waiting...*"] * 3)
+
+    try:
+        _current_state = _aoe_handle.run(user_message, _current_state)
+        bot_text       = _build_bot_text(_current_state)
+
+        new_history = []
+        for msg in (_current_state or {}).get("history", []):
+            new_history.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
+        new_history.append({"role": "assistant", "content": bot_text})
+
+        # Show approve row only when open_questions is empty
+        questions    = _current_state.get("open_questions") or []
+        approve_vis  = gr.update(visible=len(questions) == 0)
+
+        model_info, conf, unconf = _format_sidebar(_current_state)
+        return "", new_history, approve_vis, model_info, conf, unconf
+
+    except Exception as e:
+        chat_history.append({"role": "assistant", "content": f"**Error:** {str(e)}"})
+        return "", chat_history, gr.update(visible=False), "—", "—", "—"
+
+
+def _approve(chat_history: list):
+    """User clicked Approve — set analyser_approved and advance graph."""
+    global _current_state
+    if _current_state is None:
+        return chat_history, gr.update(visible=False), "—", "—", "—"
+
+    _current_state["analyser_approved"] = True
+    # Run the graph once more so it can route to code_generator
+    _current_state = _aoe_handle.run("__approved__", _current_state)
+
+    chat_history.append({
+        "role": "assistant",
+        "content": " **Model approved.** Proceeding to code generation…"
+    })
+    model_info, conf, unconf = _format_sidebar(_current_state)
+    return chat_history, gr.update(visible=False), model_info, conf, unconf
+
+
+def _request_changes(chat_history: list):
+    """User clicked Request Changes — hide approve row, prompt for feedback."""
+    chat_history.append({
+        "role": "assistant",
+        "content": "Sure — what would you like to change?"
+    })
+    return chat_history, gr.update(visible=False)
 
 
 # ============ CSS ============
@@ -117,6 +135,7 @@ custom_css = """
     --aoe-b1:      rgba(255,255,255,0.14);
     --aoe-accent:  #2E7DD1;
     --aoe-asoft:   rgba(46,125,209,0.13);
+    --aoe-green:   #1FA876;
     --aoe-t0:      #EFF3F8;
     --aoe-t1:      #8BA3BC;
     --aoe-t2:      #4A6278;
@@ -167,8 +186,12 @@ p, span, label, h1, h2, h3, h4, h5, li, td, th {
 .message.bot, .message.assistant {
     background: var(--aoe-card) !important;
     border: 1px solid var(--aoe-b0) !important;
+    color: var(--aoe-t0) !important;
 }
 .avatar-container { background: var(--aoe-card) !important; }
+.message.bot strong, .message.assistant strong {
+    color: var(--aoe-t0) !important;
+}
 
 textarea, input[type="text"] {
     background: var(--aoe-card) !important;
@@ -186,6 +209,10 @@ textarea:focus, input:focus {
 }
 textarea::placeholder, input::placeholder { color: var(--aoe-t2) !important; }
 
+.approve-row p, .approve-row span, .approve-row strong {
+    color: var(--aoe-t0) !important;
+}
+
 button {
     font-family: 'IBM Plex Sans', sans-serif !important;
     font-size: 11px !important;
@@ -200,12 +227,38 @@ button.primary, [class*="primary"]:not(.message) {
     color: #fff !important;
     border: none !important;
 }
+button.primary:hover { opacity: 0.85 !important; }
 button.secondary, [class*="secondary"]:not(.message) {
     background: transparent !important;
     color: var(--aoe-t1) !important;
     border: 1px solid var(--aoe-b1) !important;
 }
 button.secondary:hover { background: var(--aoe-card) !important; color: var(--aoe-t0) !important; }
+
+/* Approve row */
+.approve-row {
+    background: var(--aoe-card) !important;
+    border: 1px solid var(--aoe-b1) !important;
+    border-radius: 10px !important;
+    padding: 12px 16px !important;
+    margin-top: 6px !important;
+}
+.approve-label {
+    font-size: 12px !important;
+    color: var(--aoe-t1) !important;
+    margin-bottom: 8px !important;
+}
+.approve-btn {
+    background: var(--aoe-green) !important;
+    color: #fff !important;
+    border: none !important;
+}
+.approve-btn:hover { opacity: 0.85 !important; }
+.changes-btn {
+    background: transparent !important;
+    color: var(--aoe-t1) !important;
+    border: 1px solid var(--aoe-b1) !important;
+}
 
 .sidebar-card {
     background: var(--aoe-card) !important;
@@ -225,27 +278,19 @@ button.secondary:hover { background: var(--aoe-card) !important; color: var(--ao
 }
 .sidebar-card table { width: 100% !important; border-collapse: collapse !important; }
 .sidebar-card th {
-    font-size: 10px !important;
-    letter-spacing: 0.07em !important;
-    text-transform: uppercase !important;
-    color: var(--aoe-t2) !important;
-    border-bottom: 1px solid var(--aoe-b1) !important;
-    padding: 4px 6px !important;
+    font-size: 10px !important; letter-spacing: 0.07em !important;
+    text-transform: uppercase !important; color: var(--aoe-t2) !important;
+    border-bottom: 1px solid var(--aoe-b1) !important; padding: 4px 6px !important;
 }
 .sidebar-card td {
-    font-size: 12px !important;
-    color: var(--aoe-t1) !important;
-    padding: 5px 6px !important;
-    border-bottom: 1px solid var(--aoe-b0) !important;
+    font-size: 12px !important; color: var(--aoe-t1) !important;
+    padding: 5px 6px !important; border-bottom: 1px solid var(--aoe-b0) !important;
 }
 
 h3 {
-    font-size: 10px !important;
-    font-weight: 700 !important;
-    letter-spacing: 0.1em !important;
-    text-transform: uppercase !important;
-    color: var(--aoe-t2) !important;
-    margin: 14px 0 4px !important;
+    font-size: 10px !important; font-weight: 700 !important;
+    letter-spacing: 0.1em !important; text-transform: uppercase !important;
+    color: var(--aoe-t2) !important; margin: 14px 0 4px !important;
 }
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -266,53 +311,65 @@ with gr.Blocks(title="AOE — Automated Optimization Engineer") as demo:
 
         # LEFT: Chat
         with gr.Column(scale=3):
-            chatbot = gr.Chatbot(label="", height=490, show_label=False)
+            chatbot = gr.Chatbot(label="", height=460, show_label=False)
+
+            # Approve / Request Changes row — hidden until open_questions is empty
+            with gr.Row(visible=False, elem_classes=["approve-row"]) as approve_row:
+                gr.Markdown(
+                    "**Does this model look correct?**",
+                    elem_classes=["approve-label"],
+                )
+                approve_btn  = gr.Button("✔ Approve",          elem_classes=["approve-btn"],  scale=1)
+                changes_btn  = gr.Button("✎ Request Changes",  elem_classes=["changes-btn"],  scale=1)
+
+            # Normal input row
             with gr.Row():
                 msg_input = gr.Textbox(
                     show_label=False,
                     placeholder="Describe your optimization problem...",
-                    scale=9,
-                    lines=1,
-                    max_lines=1,
+                    scale=9, lines=1, max_lines=1,
                 )
                 send_btn = gr.Button("Send", variant="primary", scale=1, min_width=80)
 
         # RIGHT: Sidebar
         with gr.Column(scale=1, min_width=230):
-
             gr.Markdown("### Model Structure")
-            model_display = gr.Markdown(
-                value="*Waiting for input...*",
-                elem_classes=["sidebar-card"],
-            )
+            model_display = gr.Markdown(value="*Waiting for input...*", elem_classes=["sidebar-card"])
 
             gr.Markdown("### Confirmed")
-            confirmed_display = gr.Markdown(
-                value="*None yet.*",
-                elem_classes=["sidebar-card"],
-            )
+            confirmed_display = gr.Markdown(value="*None yet.*", elem_classes=["sidebar-card"])
 
             gr.Markdown("### Pending Review")
-            unconfirmed_display = gr.Markdown(
-                value="*None yet.*",
-                elem_classes=["sidebar-card"],
-            )
+            unconfirmed_display = gr.Markdown(value="*None yet.*", elem_classes=["sidebar-card"])
 
             reset_btn = gr.Button("New Session", variant="secondary")
 
-    # Bindings
-    all_outputs = [msg_input, chatbot, model_display, confirmed_display, unconfirmed_display]
-    send_btn.click(fn=_process_message, inputs=[msg_input, chatbot], outputs=all_outputs)
-    msg_input.submit(fn=_process_message, inputs=[msg_input, chatbot], outputs=all_outputs)
+    # ── Bindings ──────────────────────────────────────────────────────
+    send_outputs = [msg_input, chatbot, approve_row, model_display, confirmed_display, unconfirmed_display]
+
+    send_btn.click(fn=_process_message, inputs=[msg_input, chatbot], outputs=send_outputs)
+    msg_input.submit(fn=_process_message, inputs=[msg_input, chatbot], outputs=send_outputs)
+
+    approve_btn.click(
+        fn=_approve,
+        inputs=[chatbot],
+        outputs=[chatbot, approve_row, model_display, confirmed_display, unconfirmed_display],
+    )
+
+    changes_btn.click(
+        fn=_request_changes,
+        inputs=[chatbot],
+        outputs=[chatbot, approve_row],
+    )
 
     def reset_session():
         global _current_state
         _current_state = None
-        return [], "", "*Waiting for input...*", "*None yet.*", "*None yet.*"
+        return [], "", gr.update(visible=False), "*Waiting for input...*", "*None yet.*", "*None yet.*"
 
     reset_btn.click(
         fn=reset_session,
-        outputs=[chatbot, msg_input, model_display, confirmed_display, unconfirmed_display],
+        outputs=[chatbot, msg_input, approve_row, model_display, confirmed_display, unconfirmed_display],
     )
 
 if __name__ == "__main__":
