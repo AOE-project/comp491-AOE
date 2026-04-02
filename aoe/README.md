@@ -48,10 +48,14 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ```bash
 # Create venv (only needed once)
-uv venv .venv
+uv venv .venv   
+    #for windows 
+    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
 # Activate it (run this every time you open a new terminal)
 source .venv/bin/activate
+    #for windows 
+    .venv\Scripts\activate
 ```
 
 ### 2. Install dependencies
@@ -75,12 +79,17 @@ cp .env.example .env
 ```bash
 # From the aoe/ directory with the venv activated:
 python3 -m pytest tests/test_llm_connection.py -v -s
+
+    #for windows
+    python -m pytest tests/test_llm_connection.py -v -s
 ```
 
 ### 5. Run the CLI
 
 ```bash
 python3 -m ui.cli.main
+    #for windows
+    python -m ui.cli.main
 ```
 
 can try with question:
@@ -97,4 +106,7 @@ Useful when building or testing the UI layer independently of the LLM.
 
 ```bash
 python3 -m ui.gradio.app
+    #for windows
+    python -m ui.gradio.app
+
 ```
