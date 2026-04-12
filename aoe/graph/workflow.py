@@ -5,14 +5,16 @@ Nodes, conditional routing, and the compiled graph.
 Entry point is always AOEHandle (middleware/handle.py), never called directly.
 
 Routing logic:
-  analyser → if open_questions is empty AND analyser_approved → code_generator
-           → if open_questions is empty AND not approved      → END (await user approval)
-           → if open_questions not empty                      → END (await user answers)
+  analyser        → if analyser_approved → input_retrieval
+                  → otherwise            → END (await answers or approval)
+  input_retrieval → if current_input_spec empty → code_generator
+                  → otherwise                   → END (await next data item)
 """
 
 from langgraph.graph import StateGraph, END
 
 from agents.analyser import analyser_node
+from agents.input_retrieval import input_retrieval_node
 from core.config import load_settings
 from core.state import GraphState
 
@@ -30,6 +32,10 @@ def dummy_analyser_node(state: GraphState) -> dict:
     Turn 1: returns open questions.
     Turn 2+: clears questions and marks the model ready for approval.
     """
+    # Model already approved — pass through so the router advances.
+    if state.get("analyser_approved"):
+        return {}
+
     turn = state.get("iteration_count", 0)
 
     base_model = {
@@ -105,11 +111,23 @@ def explainer_node(state: GraphState) -> dict:
 
 def _route_after_analyser(state: GraphState) -> str:
     """
-    Advance to code_generator only when the user has explicitly approved the model.
+    Advance to input_retrieval only when the user has explicitly approved the model.
     Otherwise return END so AOEHandle can surface questions or the summary to the user
     and wait for the next message.
     """
     if state.get("analyser_approved"):
+        return "input_retrieval"
+    return END
+
+
+def _route_after_input_retrieval(state: GraphState) -> str:
+    """
+    Advance to code_generator only when all data has been collected
+    (current_input_spec is empty/None).  Otherwise return END to await
+    the next user message.
+    """
+    spec = state.get("current_input_spec")
+    if not spec:
         return "code_generator"
     return END
 
@@ -121,11 +139,13 @@ def _route_after_analyser(state: GraphState) -> str:
 _builder = StateGraph(GraphState)
 
 _builder.add_node("analyser", _analyser)
+_builder.add_node("input_retrieval", input_retrieval_node)
 _builder.add_node("code_generator", code_generator_node)
 _builder.add_node("explainer", explainer_node)
 
 _builder.set_entry_point("analyser")
 _builder.add_conditional_edges("analyser", _route_after_analyser)
+_builder.add_conditional_edges("input_retrieval", _route_after_input_retrieval)
 _builder.add_edge("code_generator", "explainer")
 _builder.add_edge("explainer", END)
 

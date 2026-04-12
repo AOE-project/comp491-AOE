@@ -36,3 +36,4 @@ htmlcov/
 
 # Local / non-essential dev files (tests, evaluation)
 local/
+aoe/sessions/
