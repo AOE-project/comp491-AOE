@@ -78,18 +78,20 @@ cp .env.example .env
 
 ```bash
 # From the aoe/ directory with the venv activated:
+cd aoe
+source .venv/bin/activate
 python3 -m pytest tests/test_llm_connection.py -v -s
 
-    #for windows
-    python -m pytest tests/test_llm_connection.py -v -s
+#for windows
+python -m pytest tests/test_llm_connection.py -v -s
 ```
 
 ### 5. Run the CLI
 
 ```bash
 python3 -m ui.cli.main
-    #for windows
-    python -m ui.cli.main
+#for windows
+python -m ui.cli.main
 ```
 
 can try with question:
@@ -106,7 +108,50 @@ Useful when building or testing the UI layer independently of the LLM.
 
 ```bash
 python3 -m ui.gradio.app
-    #for windows
-    python -m ui.gradio.app
+#for windows
+python -m ui.gradio.app
 
 ```
+
+### 8. Dummy CSV files for input retrieval testing
+
+Pre-built CSV fixtures live in `tests/dummy/` for the sample transportation problem
+(warehouses: ist, ank, izm — stores: kad, üsk, bey):
+
+| File    | Parameter           | Shape     | Contents                            |
+|---------|---------------------|-----------|-------------------------------------|
+| `c.csv` | Shipping cost       | 3×3 (I×J) | Labeled rows & cols — header row/col auto-stripped by the parser |
+| `s.csv` | Supply at warehouse | 1-D (I)   | `150, 175, 200` — one value per row |
+| `d.csv` | Demand at store     | 1-D (J)   | `120, 130, 100` — one value per row |
+
+Values are balanced (total supply 525 ≥ total demand 350) so the LP will be feasible.
+
+When the CLI prompts `Path to CSV for c:`, enter:
+
+```
+tests/dummy/c.csv
+```
+
+Same pattern for `s` and `d`.
+
+### 9. Another sample 
+
+I run a factory that produces 2 products: chairs and tables. Each product requires labor hours and wood. I have limited labor and wood available per week. Each chair earns $25 profit and each table earns $40 profit. I want to maximize total weekly profit. The number of chairs and tables must be whole numbers.
+                                                                                                                      
+  ---             
+  When asked for data:
+
+  ┌────────────────────────────────────────────────┬─────────────────────────────────────────────────────────────┐
+  │                     Prompt                     │                           Answer                            │
+  ├────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────┤
+  │ How many Products (P)?                         │ chair, table                                                │
+  ├────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────┤
+  │ How many Resources (R)?                        │ labor, wood                                                 │    
+  ├────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────┤
+  │ Profit per product (profit)                    │ chair = 25, table = 40                                      │    
+  ├────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────┤    
+  │ Available resource per week (available)        │ labor = 120, wood = 80                                      │
+  ├────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────┤    
+  │ Resource required per unit (usage) — 2×2 table │ chair needs: labor=2, wood=1 / table needs: labor=4, wood=3 │
+  └────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────┘    
+                  

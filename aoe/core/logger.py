@@ -57,7 +57,7 @@ class SessionLogger:
         now = _utcnow()
 
         self._path_state.write_text(
-            json.dumps(_json_safe(state), indent=2), encoding="utf-8"
+            json.dumps(_json_safe(state), indent=2, ensure_ascii=False), encoding="utf-8"
         )
 
         meta = self._load_metadata()
@@ -68,7 +68,7 @@ class SessionLogger:
         meta["last_updated"] = now
         meta["iteration_count"] = state.get("iteration_count", 0)
         meta["analyser_approved"] = state.get("analyser_approved", False)
-        self._path_metadata.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        self._path_metadata.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
 
         if state.get("raw_data"):
             self.save_inputs(state["raw_data"])
@@ -88,33 +88,42 @@ class SessionLogger:
     def log_event(self, event_type: str, data: dict | None = None) -> None:
         entry = {"ts": _utcnow(), "event": event_type, **(data or {})}
         with self._path_events.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(entry) + "\n")
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     def save_inputs(self, raw_data: dict) -> None:
-        """Write each raw_data entry to inputs/<data_key>.csv."""
+        """Write each raw_data entry to inputs/<data_key>.csv.
+
+        1-D param  {"row": value, ...}          → two-column CSV (row, value)
+        2-D param  {"row": {"col": value, ...}} → matrix CSV with row/col headers
+        """
         for key, value in raw_data.items():
             path = self._path_inputs / f"{key}.csv"
             with path.open("w", newline="", encoding="utf-8") as fh:
                 writer = csv.writer(fh)
-                if isinstance(value, list) and value and isinstance(value[0], dict):
-                    dw = csv.DictWriter(fh, fieldnames=list(value[0].keys()))
-                    dw.writeheader()
-                    dw.writerows(value)
+                if isinstance(value, dict) and value:
+                    first = next(iter(value.values()))
+                    if isinstance(first, dict):
+                        # 2-D: rows × cols matrix
+                        col_labels = list(first.keys())
+                        writer.writerow([""] + col_labels)
+                        for row_label, row_vals in value.items():
+                            writer.writerow([row_label] + [row_vals.get(c, "") for c in col_labels])
+                    else:
+                        # 1-D: row → scalar
+                        writer.writerow(["key", "value"])
+                        for k, v in value.items():
+                            writer.writerow([k, v])
                 elif isinstance(value, list):
                     writer.writerow([key])
                     for item in value:
                         writer.writerow([item])
-                elif isinstance(value, dict):
-                    writer.writerow(["key", "value"])
-                    for k, v in value.items():
-                        writer.writerow([k, v])
                 else:
                     writer.writerow([key])
                     writer.writerow([value])
 
     def save_milp_model(self, model: dict) -> None:
         (self.dir / "milp_model.json").write_text(
-            json.dumps(model, indent=2), encoding="utf-8"
+            json.dumps(model, indent=2, ensure_ascii=False), encoding="utf-8"
         )
 
     def save_generated_code(self, code: str) -> None:

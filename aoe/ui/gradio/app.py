@@ -7,29 +7,49 @@ Runs everything in a single process.
 Run with:
     python -m ui.gradio.app
 """
-"""
-ui/gradio/app.py — Gradio UI for AOE.
-
-Professional dark-mode chat interface for MILP model refinement.
-
-Run with:
-    python -m ui.gradio.app
-"""
-import gradio as gr
+import csv
+import io
 import sys
 from pathlib import Path
 from typing import Optional
-from middleware.handle import AOEHandle
+
+import gradio as gr
+import pandas as pd
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
+
+from middleware.handle import AOEHandle
 
 # ============ GLOBAL STATE ============
 _aoe_handle   = AOEHandle()
 _current_state: Optional[dict] = None
 
-# ============ CORE FUNCTIONS ============
+# ============ CORE HELPERS ============
 
 def _build_bot_text(state: dict) -> str:
+    spec      = (state or {}).get("current_input_spec") or {}
+    spec_type = spec.get("type", "")
+
+    if spec_type == "set_size":
+        error  = spec.get("error")
+        prompt = spec.get("prompt", "")
+        return f"**Error:** {error}\n\n{prompt}" if error else prompt
+
+    if spec_type == "param_data":
+        pname = spec.get("param_name", "parameter")
+        error = spec.get("error")
+        is_scalar = spec.get("is_scalar") or not spec.get("row_labels")
+        if is_scalar:
+            prompt = spec.get("prompt", f"Enter the value for **{pname}**. Type a single number.")
+            return f"**Error collecting {pname}:** {error}\n\n{prompt}" if error else prompt
+        if error:
+            return (
+                f"**Error collecting {pname}:** {error}\n\n"
+                "Please resubmit using the data panel below."
+            )
+        return f"Please provide data for **{pname}** using the panel below."
+
+    # Normal analyser mode
     parts   = []
     summary = (state.get("analysis_summary") or "").strip()
     if summary:
@@ -45,7 +65,7 @@ def _build_bot_text(state: dict) -> str:
 def _format_sidebar(state: dict):
     milp = state.get("milp_model") or {}
     if milp:
-        obj   = milp.get("objective_type", "—")
+        obj        = milp.get("objective", {}).get("sense", "—")
         model_text = (
             f"| Metric | Value |\n"
             f"|--------|-------|\n"
@@ -67,263 +87,250 @@ def _format_sidebar(state: dict):
     return model_text, confirmed, unconfirmed
 
 
-def _process_message(user_message: str, chat_history: list):
-    """Handle a normal chat message turn."""
-    global _current_state
+def _make_df_for_spec(spec: dict) -> tuple[Optional[pd.DataFrame], bool]:
+    """
+    Build an empty DataFrame matching the spec's shape.
+    Returns (df, show) — show=False when max dimension > 10.
+    """
+    row_labels = spec.get("row_labels") or []
+    col_labels = spec.get("col_labels") or None
+    param_name = spec.get("param_name", "value")
 
+    if not row_labels:
+        return None, False
+
+    if col_labels:
+        if max(len(row_labels), len(col_labels)) > 10:
+            return None, False
+        df = pd.DataFrame(
+            [[None] * len(col_labels) for _ in row_labels],
+            index=pd.Index(row_labels, name=""),
+            columns=col_labels,
+        )
+    else:
+        if len(row_labels) > 10:
+            return None, False
+        df = pd.DataFrame(
+            [[None] for _ in row_labels],
+            index=pd.Index(row_labels, name=""),
+            columns=[param_name],
+        )
+    # reset_index moves row labels from the (hidden) pandas index into a
+    # visible first column so Gradio renders them in the table.
+    return df.reset_index(), True
+
+
+def _df_to_csv_str(df_value) -> str:
+    """Serialize a Gradio Dataframe value to a CSV string (header only, no index)."""
+    if isinstance(df_value, pd.DataFrame):
+        return df_value.to_csv(index=False, header=True)
+    if isinstance(df_value, list):
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        for row in df_value:
+            writer.writerow(row)
+        return buf.getvalue()
+    return str(df_value)
+
+
+# ============ SHARED OUTPUT BUILDER ============
+# All callbacks share the same 12-element output tuple:
+#   msg_input, chatbot, approve_row, msg_row,
+#   data_panel, data_prompt_md, data_error_md,
+#   param_df, param_file,
+#   model_display, confirmed_display, unconfirmed_display
+
+def _build_all_outputs(state: dict, chat_history: list, clear_msg: bool = False):
+    spec      = (state or {}).get("current_input_spec") or {}
+    spec_type = spec.get("type", "")
+    is_param  = spec_type == "param_data"
+    is_scalar = is_param and (spec.get("is_scalar") or not spec.get("row_labels"))
+    is_tabular = is_param and not is_scalar
+
+    bot_text    = _build_bot_text(state)
+    # Preserve the full conversation — append bot reply to whatever is already displayed.
+    new_history = list(chat_history) + [{"role": "assistant", "content": bot_text}]
+
+    questions        = (state or {}).get("open_questions") or []
+    not_approved_yet = not (state or {}).get("analyser_approved", False)
+    has_run          = (state or {}).get("iteration_count", 0) > 0
+    approve_vis = gr.update(visible=has_run and not questions and not spec_type and not_approved_yet)
+
+    # Scalars are collected via the normal chat input, not the data panel
+    msg_row_vis   = gr.update(visible=not is_tabular)
+    data_panel_vis = gr.update(visible=is_tabular)
+
+    prompt = spec.get("prompt", "") if is_tabular else ""
+
+    error      = spec.get("error") or "" if is_tabular else ""
+    error_upd  = gr.update(
+        visible=bool(error),
+        value=f"> **Error:** {error}" if error else "",
+    )
+
+    if is_tabular:
+        df, show_df = _make_df_for_spec(spec)
+        df_upd = gr.update(visible=show_df, value=df) if show_df else gr.update(visible=False, value=None)
+    else:
+        # Clear any stale table from a previous param
+        df_upd = gr.update(visible=False, value=None)
+
+    file_upd = gr.update(value=None)
+
+    model_info, conf, unconf = _format_sidebar(state)
+
+    return (
+        "" if clear_msg else gr.update(),   # msg_input
+        new_history,                         # chatbot
+        approve_vis,                         # approve_row
+        msg_row_vis,                         # msg_row
+        data_panel_vis,                      # data_panel
+        prompt,                              # data_prompt_md
+        error_upd,                           # data_error_md
+        df_upd,                              # param_df
+        file_upd,                            # param_file
+        model_info,                          # model_display
+        conf,                                # confirmed_display
+        unconf,                              # unconfirmed_display
+    )
+
+
+# ============ CALLBACKS ============
+
+def _process_message(user_message: str, chat_history: list):
+    """Handle a normal chat / set-size answer turn."""
+    global _current_state
     if not user_message.strip():
-        return "", chat_history, gr.update(visible=False), *(["*Waiting...*"] * 3)
+        return (gr.update(),) * 12
+
+    # Add the user's message to the display before the bot responds.
+    chat_history = list(chat_history) + [{"role": "user", "content": user_message}]
 
     try:
         _current_state = _aoe_handle.run(user_message, _current_state)
-        bot_text       = _build_bot_text(_current_state)
-
-        new_history = []
-        for msg in (_current_state or {}).get("history", []):
-            new_history.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
-        new_history.append({"role": "assistant", "content": bot_text})
-
-        # Show approve row only when open_questions is empty
-        questions    = _current_state.get("open_questions") or []
-        approve_vis  = gr.update(visible=len(questions) == 0)
-
-        model_info, conf, unconf = _format_sidebar(_current_state)
-        return "", new_history, approve_vis, model_info, conf, unconf
-
+        return _build_all_outputs(_current_state, chat_history, clear_msg=True)
     except Exception as e:
         chat_history.append({"role": "assistant", "content": f"**Error:** {str(e)}"})
-        return "", chat_history, gr.update(visible=False), "—", "—", "—"
+        return ("", chat_history) + (gr.update(),) * 10
 
 
 def _approve(chat_history: list):
     """User clicked Approve — set analyser_approved and advance graph."""
     global _current_state
     if _current_state is None:
-        return chat_history, gr.update(visible=False), "—", "—", "—"
+        return (gr.update(),) * 12
 
     _current_state["analyser_approved"] = True
-    # Run the graph once more so it can route to code_generator
     _current_state = _aoe_handle.run("__approved__", _current_state)
-
-    chat_history.append({
-        "role": "assistant",
-        "content": " **Model approved.** Proceeding to code generation…"
-    })
-    model_info, conf, unconf = _format_sidebar(_current_state)
-    return chat_history, gr.update(visible=False), model_info, conf, unconf
+    return _build_all_outputs(_current_state, chat_history)
 
 
 def _request_changes(chat_history: list):
     """User clicked Request Changes — hide approve row, prompt for feedback."""
-    chat_history.append({
-        "role": "assistant",
-        "content": "Sure — what would you like to change?"
-    })
-    return chat_history, gr.update(visible=False)
+    chat_history.append({"role": "assistant", "content": "Sure — what would you like to change?"})
+    return (
+        gr.update(),                # msg_input
+        chat_history,               # chatbot
+        gr.update(visible=False),   # approve_row
+        gr.update(visible=True),    # msg_row
+        gr.update(visible=False),   # data_panel
+        gr.update(),                # data_prompt_md
+        gr.update(),                # data_error_md
+        gr.update(),                # param_df
+        gr.update(),                # param_file
+        gr.update(),                # model_display
+        gr.update(),                # confirmed_display
+        gr.update(),                # unconfirmed_display
+    )
+
+
+def _submit_param_data(file, df_value, chat_history: list):
+    """User submitted parameter data via file upload or the editable table."""
+    global _current_state
+    spec = (_current_state or {}).get("current_input_spec") or {}
+
+    if file is not None:
+        answer = file if isinstance(file, str) else file.name
+    elif df_value is not None:
+        answer = _df_to_csv_str(df_value)
+    else:
+        err_spec = {**spec, "error": "Please upload a CSV file or fill in the table above."}
+        _current_state = {**(_current_state or {}), "current_input_spec": err_spec}
+        return _build_all_outputs(_current_state, chat_history)
+
+    try:
+        _current_state = _aoe_handle.run(answer, _current_state)
+        return _build_all_outputs(_current_state, chat_history)
+    except Exception as e:
+        chat_history.append({"role": "assistant", "content": f"**Error:** {str(e)}"})
+        return (gr.update(),) * 12
+
+
+def _reset_session():
+    global _current_state
+    _current_state = None
+    return (
+        "",                          # msg_input
+        [],                          # chatbot
+        gr.update(visible=False),    # approve_row
+        gr.update(visible=True),     # msg_row
+        gr.update(visible=False),    # data_panel
+        "",                          # data_prompt_md
+        gr.update(visible=False, value=""),  # data_error_md
+        gr.update(visible=False),    # param_df
+        gr.update(value=None),       # param_file
+        "*Waiting for input...*",    # model_display
+        "*None yet.*",               # confirmed_display
+        "*None yet.*",               # unconfirmed_display
+    )
 
 
 # ============ CSS ============
 
-custom_css = """
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap');
-
-:root {
-    --aoe-bg:      #0D1B2A;
-    --aoe-surface: #152233;
-    --aoe-card:    #1C2E40;
-    --aoe-b0:      rgba(255,255,255,0.07);
-    --aoe-b1:      rgba(255,255,255,0.14);
-    --aoe-accent:  #2E7DD1;
-    --aoe-asoft:   rgba(46,125,209,0.13);
-    --aoe-green:   #1FA876;
-    --aoe-t0:      #EFF3F8;
-    --aoe-t1:      #8BA3BC;
-    --aoe-t2:      #4A6278;
-}
-
-body, html { background: var(--aoe-bg) !important; }
-
-.gradio-container {
-    background: var(--aoe-bg) !important;
-    max-width: 100% !important;
-    font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif !important;
-}
-
-.contain, .gap, .form, .block, .wrap, .panel {
-    background: transparent !important;
-    border-color: var(--aoe-b0) !important;
-}
-
-body, .gradio-container,
-p, span, label, h1, h2, h3, h4, h5, li, td, th {
-    color: var(--aoe-t0) !important;
-    font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif !important;
-}
-
-.aoe-title {
-    font-size: 11px !important;
-    font-weight: 700 !important;
-    letter-spacing: 0.12em !important;
-    text-transform: uppercase !important;
-    text-align: center !important;
-    color: var(--aoe-t0) !important;
-    padding: 12px 0 !important;
-    border-bottom: 1px solid var(--aoe-b1) !important;
-    margin-bottom: 4px !important;
-}
-
-.chatbot, [data-testid="chatbot"] {
-    background: var(--aoe-surface) !important;
-    border: 1px solid var(--aoe-b1) !important;
-    border-radius: 10px !important;
-}
-
-.message { border-radius: 8px !important; padding: 10px 14px !important; }
-.message.user {
-    background: var(--aoe-asoft) !important;
-    border: 1px solid rgba(46,125,209,0.3) !important;
-}
-.message.bot, .message.assistant {
-    background: var(--aoe-card) !important;
-    border: 1px solid var(--aoe-b0) !important;
-    color: var(--aoe-t0) !important;
-}
-.avatar-container { background: var(--aoe-card) !important; }
-.message.bot strong, .message.assistant strong {
-    color: var(--aoe-t0) !important;
-}
-
-textarea, input[type="text"] {
-    background: var(--aoe-card) !important;
-    color: var(--aoe-t0) !important;
-    border: 1px solid var(--aoe-b1) !important;
-    border-radius: 8px !important;
-    font-size: 13px !important;
-    font-family: 'IBM Plex Sans', sans-serif !important;
-    padding: 10px 14px !important;
-}
-textarea:focus, input:focus {
-    border-color: var(--aoe-accent) !important;
-    outline: none !important;
-    box-shadow: 0 0 0 3px rgba(46,125,209,0.18) !important;
-}
-textarea::placeholder, input::placeholder { color: var(--aoe-t2) !important; }
-
-.approve-row p, .approve-row span, .approve-row strong {
-    color: var(--aoe-t0) !important;
-}
-
-button {
-    font-family: 'IBM Plex Sans', sans-serif !important;
-    font-size: 11px !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.06em !important;
-    text-transform: uppercase !important;
-    border-radius: 7px !important;
-    cursor: pointer !important;
-}
-button.primary, [class*="primary"]:not(.message) {
-    background: var(--aoe-accent) !important;
-    color: #fff !important;
-    border: none !important;
-}
-button.primary:hover { opacity: 0.85 !important; }
-button.secondary, [class*="secondary"]:not(.message) {
-    background: transparent !important;
-    color: var(--aoe-t1) !important;
-    border: 1px solid var(--aoe-b1) !important;
-}
-button.secondary:hover { background: var(--aoe-card) !important; color: var(--aoe-t0) !important; }
-
-/* Approve row */
-.approve-row {
-    background: var(--aoe-card) !important;
-    border: 1px solid var(--aoe-b1) !important;
-    border-radius: 10px !important;
-    padding: 12px 16px !important;
-    margin-top: 6px !important;
-}
-.approve-label {
-    font-size: 12px !important;
-    color: var(--aoe-t1) !important;
-    margin-bottom: 8px !important;
-}
-.approve-btn {
-    background: var(--aoe-green) !important;
-    color: #fff !important;
-    border: none !important;
-}
-.approve-btn:hover { opacity: 0.85 !important; }
-.changes-btn {
-    background: transparent !important;
-    color: var(--aoe-t1) !important;
-    border: 1px solid var(--aoe-b1) !important;
-}
-
-.sidebar-card {
-    background: var(--aoe-card) !important;
-    border: 1px solid var(--aoe-b0) !important;
-    border-radius: 8px !important;
-    padding: 12px 14px !important;
-    margin-bottom: 2px !important;
-}
-.sidebar-card p, .sidebar-card li { color: var(--aoe-t1) !important; font-size: 12px !important; }
-.sidebar-card code {
-    color: var(--aoe-accent) !important;
-    background: var(--aoe-asoft) !important;
-    border-radius: 3px !important;
-    padding: 1px 5px !important;
-    font-family: 'IBM Plex Mono', monospace !important;
-    font-size: 11px !important;
-}
-.sidebar-card table { width: 100% !important; border-collapse: collapse !important; }
-.sidebar-card th {
-    font-size: 10px !important; letter-spacing: 0.07em !important;
-    text-transform: uppercase !important; color: var(--aoe-t2) !important;
-    border-bottom: 1px solid var(--aoe-b1) !important; padding: 4px 6px !important;
-}
-.sidebar-card td {
-    font-size: 12px !important; color: var(--aoe-t1) !important;
-    padding: 5px 6px !important; border-bottom: 1px solid var(--aoe-b0) !important;
-}
-
-h3 {
-    font-size: 10px !important; font-weight: 700 !important;
-    letter-spacing: 0.1em !important; text-transform: uppercase !important;
-    color: var(--aoe-t2) !important; margin: 14px 0 4px !important;
-}
-
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: var(--aoe-bg); }
-::-webkit-scrollbar-thumb { background: var(--aoe-b1); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: var(--aoe-accent); }
-
-footer, .footer { display: none !important; }
-"""
+custom_css = (Path(__file__).parent / "style.css").read_text(encoding="utf-8")
 
 # ============ GRADIO UI ============
 
-with gr.Blocks(title="AOE — Automated Optimization Engineer") as demo:
+with gr.Blocks(title="AOE — Automated Optimization Engineer", css=custom_css) as demo:
 
     gr.Markdown("<p class='aoe-title'>AOE &nbsp;/&nbsp; Automated Optimization Engineer</p>")
 
     with gr.Row(equal_height=True):
 
-        # LEFT: Chat
+        # LEFT: Chat + input area
         with gr.Column(scale=3):
             chatbot = gr.Chatbot(label="", height=460, show_label=False)
 
             # Approve / Request Changes row — hidden until open_questions is empty
             with gr.Row(visible=False, elem_classes=["approve-row"]) as approve_row:
-                gr.Markdown(
-                    "**Does this model look correct?**",
-                    elem_classes=["approve-label"],
-                )
-                approve_btn  = gr.Button("✔ Approve",          elem_classes=["approve-btn"],  scale=1)
-                changes_btn  = gr.Button("✎ Request Changes",  elem_classes=["changes-btn"],  scale=1)
+                gr.Markdown("**Does this model look correct?**", elem_classes=["approve-label"])
+                approve_btn = gr.Button("✔ Approve",         elem_classes=["approve-btn"], scale=1)
+                changes_btn = gr.Button("✎ Request Changes", elem_classes=["changes-btn"], scale=1)
 
-            # Normal input row
-            with gr.Row():
+            # Data collection panel — shown during param_data collection turns
+            with gr.Group(visible=False, elem_classes=["data-panel"]) as data_panel:
+                data_prompt_md = gr.Markdown("", elem_classes=["data-prompt"])
+                data_error_md  = gr.Markdown("", visible=False, elem_classes=["data-error"])
+                with gr.Row():
+                    param_file = gr.File(
+                        label="Upload CSV",
+                        file_types=[".csv"],
+                        scale=1,
+                    )
+                    param_df = gr.Dataframe(
+                        label="Or edit manually (available when each dimension ≤ 10)",
+                        interactive=True,
+                        visible=False,
+                        scale=2,
+                    )
+                data_submit_btn = gr.Button(
+                    "Submit Data",
+                    variant="primary",
+                    elem_classes=["data-submit-btn"],
+                )
+
+            # Normal chat input row — hidden during param_data collection
+            with gr.Row() as msg_row:
                 msg_input = gr.Textbox(
                     show_label=False,
                     placeholder="Describe your optimization problem...",
@@ -344,33 +351,54 @@ with gr.Blocks(title="AOE — Automated Optimization Engineer") as demo:
 
             reset_btn = gr.Button("New Session", variant="secondary")
 
-    # ── Bindings ──────────────────────────────────────────────────────
-    send_outputs = [msg_input, chatbot, approve_row, model_display, confirmed_display, unconfirmed_display]
+    # ── All callbacks share the same 12-element output list ──────────────
+    ALL_OUTPUTS = [
+        msg_input,
+        chatbot,
+        approve_row,
+        msg_row,
+        data_panel,
+        data_prompt_md,
+        data_error_md,
+        param_df,
+        param_file,
+        model_display,
+        confirmed_display,
+        unconfirmed_display,
+    ]
 
-    send_btn.click(fn=_process_message, inputs=[msg_input, chatbot], outputs=send_outputs)
-    msg_input.submit(fn=_process_message, inputs=[msg_input, chatbot], outputs=send_outputs)
+    send_btn.click(
+        fn=_process_message,
+        inputs=[msg_input, chatbot],
+        outputs=ALL_OUTPUTS,
+    )
+    msg_input.submit(
+        fn=_process_message,
+        inputs=[msg_input, chatbot],
+        outputs=ALL_OUTPUTS,
+    )
 
     approve_btn.click(
         fn=_approve,
         inputs=[chatbot],
-        outputs=[chatbot, approve_row, model_display, confirmed_display, unconfirmed_display],
+        outputs=ALL_OUTPUTS,
     )
-
     changes_btn.click(
         fn=_request_changes,
         inputs=[chatbot],
-        outputs=[chatbot, approve_row],
+        outputs=ALL_OUTPUTS,
     )
 
-    def reset_session():
-        global _current_state
-        _current_state = None
-        return [], "", gr.update(visible=False), "*Waiting for input...*", "*None yet.*", "*None yet.*"
+    data_submit_btn.click(
+        fn=_submit_param_data,
+        inputs=[param_file, param_df, chatbot],
+        outputs=ALL_OUTPUTS,
+    )
 
     reset_btn.click(
-        fn=reset_session,
-        outputs=[chatbot, msg_input, approve_row, model_display, confirmed_display, unconfirmed_display],
+        fn=_reset_session,
+        outputs=ALL_OUTPUTS,
     )
 
 if __name__ == "__main__":
-    demo.launch(server_name="127.0.0.1", server_port=7860, css=custom_css)
+    demo.launch(server_name="127.0.0.1", server_port=7861)

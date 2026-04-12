@@ -74,6 +74,11 @@ def analyser_node(state: GraphState) -> dict:
     Calls the LLM, retries up to _MAX_RETRIES times on parse/validation failure,
     and returns a partial GraphState dict with updated analyser fields.
     """
+    # Model already approved — pass through without touching state so the
+    # router can advance to input_retrieval (or beyond).
+    if state.get("analyser_approved"):
+        return {}
+
     llm = get_llm_client()
     user_content = _build_user_message(state)
 

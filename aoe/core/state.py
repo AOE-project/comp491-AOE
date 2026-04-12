@@ -25,6 +25,9 @@ class GraphState(TypedDict):
 
     # Data collection (after analyser approval)
     raw_data: dict                  # keyed by parameter data_key; filled by user after approval
+    input_retrieval_queue: list     # ordered collection tasks: sets first, then parameters
+    input_retrieval_cursor: int     # index of the current task in the queue
+    current_input_spec: dict        # describes what input is needed now; None when collection is done
 
     # Code generation
     generated_code: str             # output of CodeGenerator
