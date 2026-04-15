@@ -339,9 +339,16 @@ def input_retrieval_node(state: GraphState) -> dict:
     Subsequent calls: parses the last user message as the answer to current_input_spec,
     validates, stores result, advances cursor, sets spec for next item (or clears it
     when all items are collected).
+    
+    If triggered by data_error, prepends error context to the spec.
     """
     queue: list = list(state.get("input_retrieval_queue") or [])
     cursor: int = state.get("input_retrieval_cursor", 0)
+    
+    # Check if this is a data_error recovery — add error context to the prompt
+    error_message = None
+    if state.get("last_error_type") == "data_error":
+        error_message = state.get("last_execution_error", "Data validation failed. Please provide correct data.")
 
     # First call: build the queue
     if not queue:
@@ -354,6 +361,11 @@ def input_retrieval_node(state: GraphState) -> dict:
                 "current_input_spec": {},
             }
         spec = _make_spec(queue[0], state)
+        
+        # If recovering from data_error, inject error into spec
+        if error_message:
+            spec["error"] = error_message
+        
         return {
             "input_retrieval_queue": queue,
             "input_retrieval_cursor": 0,

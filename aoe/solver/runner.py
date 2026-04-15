@@ -18,9 +18,11 @@ import sys
 import tempfile
 from pathlib import Path
 
+from core.config import load_settings
 from core.state import GraphState
 
 _TIMEOUT_SECONDS = 60
+_settings = load_settings()
 
 
 # ---------------------------------------------------------------------------
@@ -73,17 +75,65 @@ def run_generated_code(code: str) -> dict:
 def solver_node(state: GraphState) -> dict:
     """
     LangGraph node — runs the generated Gurobi script and stores the result.
+    If execution fails, also sets last_execution_error for debug routing.
+    
+    Error testing via .env:
+      TEST_ERROR_INJECTION=true + TEST_ERROR_TYPE=data_error
+    
+    Multi-attempt recovery: Skip error injection on 2nd+ regeneration attempts
+    so the fixed code can actually execute and succeed.
     """
+    # TEST MODE: Inject specific error type for debug flow testing
+    # BUT: Skip injection on 2nd+ regeneration attempt to allow fixed code to run
+    regeneration_attempts = state.get("regeneration_attempts", 0)
+    should_inject_error = (
+        _settings.test_error_injection and 
+        regeneration_attempts < 2  # Only inject on 1st attempt
+    )
+    print(f"[DEBUG] solver_node: regeneration_attempts={regeneration_attempts}, should_inject_error={should_inject_error}, test_error_injection={_settings.test_error_injection}")
+    
+    if should_inject_error:
+        error_messages = {
+            "syntax_error": "SyntaxError: invalid syntax at line 5",
+            "runtime_error": "NameError: name 'x' is not defined",
+            "modeling_error": "AttributeError: gurobipy Model object has no attribute 'addVariable'",
+            "unknown_error": "UnexpectedError: Something went wrong",
+        }
+        error_type = getattr(_settings, "test_error_type", "syntax_error")
+        error_msg = error_messages.get(error_type, error_messages["syntax_error"])
+        
+        return {
+            "solver_result": {
+                "status": "runtime_error",
+                "stdout": "",
+                "stderr": error_msg,
+                "returncode": 1,
+            },
+            "last_execution_error": error_msg,
+        }
+    
     code = (state.get("generated_code") or "").strip()
     if not code:
+        error_msg = "No generated code found in state."
         return {
             "solver_result": {
                 "status":     "runtime_error",
                 "stdout":     "",
-                "stderr":     "No generated code found in state.",
+                "stderr":     error_msg,
                 "returncode": -1,
-            }
+            },
+            "last_execution_error": error_msg,
         }
 
     result = run_generated_code(code)
-    return {"solver_result": result}
+    
+    # Capture execution error for debug routing
+    last_execution_error = None
+    if result["status"] != "success":
+        # Combine stderr and return code into a descriptive error message
+        last_execution_error = f"{result['status']}: {result['stderr']}"
+    
+    return {
+        "solver_result": result,
+        "last_execution_error": last_execution_error,
+    }

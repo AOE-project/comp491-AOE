@@ -21,6 +21,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from core.config import get_llm_client
 from core.state import GraphState
+from core.error_analysis import ErrorContext
 
 _PROMPTS_DIR   = Path(__file__).parent.parent / "prompts"
 _SYSTEM_PROMPT = (_PROMPTS_DIR / "code_generator_prompt.txt").read_text(encoding="utf-8")
@@ -32,13 +33,30 @@ _MAX_RETRIES = 3
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _build_user_message(state: GraphState) -> str:
-    """Send only the structural model to the LLM — no numerical data."""
-    return json.dumps(
-        {"milp_model": state.get("milp_model", {})},
-        ensure_ascii=False,
-        indent=2,
-    )
+def _build_user_message(state: GraphState, error_context: ErrorContext | None = None) -> str:
+    """
+    Build the user message for the LLM.
+    
+    If error_context provided (regeneration mode), uses strategic prompting with:
+    - Error classification and analysis
+    - Potential causes and recovery hints
+    - Failed code for reference
+    - Previous attempts
+    
+    Otherwise uses standard model-only prompt.
+    """
+    if error_context:
+        # Strategic prompting mode: detailed analysis
+        attempt_number = len(state.get("debug_attempts", [])) + 1
+        previous_attempts = state.get("debug_attempts", [])
+        return error_context.to_llm_prompt(
+            attempt_number=attempt_number,
+            previous_attempts=previous_attempts
+        )
+    else:
+        # Standard mode: just send the structural model
+        message_dict = {"milp_model": state.get("milp_model", {})}
+        return json.dumps(message_dict, ensure_ascii=False, indent=2)
 
 
 def _build_data_section(state: GraphState) -> str:
@@ -106,19 +124,40 @@ def code_generator_node(state: GraphState) -> dict:
     """
     LangGraph node for the CodeGenerator agent.
 
-    1. Sends only milp_model to the LLM.
-    2. Extracts the Python code block from the response.
-    3. Prepends the data section (sets + parameters from raw_data).
-    4. Checks the final script for syntax errors.
-    5. Returns generated_code (full script) and any syntax error found.
+    1. If regenerating (last_error_type == "code_error"), creates ErrorContext for strategic prompting.
+    2. Sends milp_model + error analysis to the LLM.
+    3. Extracts the Python code block from the response.
+    4. Prepends the data section (sets + parameters from raw_data).
+    5. Checks the final script for syntax errors.
+    6. Returns generated_code (full script) and any syntax error found.
     """
     llm          = get_llm_client()
-    user_content = _build_user_message(state)
+    
+    # Check if regenerating due to code_error
+    is_regenerating = state.get("last_error_type") == "code_error"
+    error_context_obj = None
+    
+    if is_regenerating:
+        # Create ErrorContext for strategic prompting
+        error_message = state.get("last_execution_error", "Unknown error")
+        generated_code = state.get("generated_code", "")
+        milp_model = state.get("milp_model", {})
+        
+        error_context_obj = ErrorContext(
+            error_message=error_message,
+            generated_code=generated_code,
+            milp_model=milp_model
+        )
+        user_content = _build_user_message(state, error_context_obj)
+    else:
+        # Standard mode
+        user_content = _build_user_message(state, None)
+    
     data_section = _build_data_section(state)
     last_code    = ""
     syntax_error = None
 
-    for _ in range(1, _MAX_RETRIES + 1):
+    for attempt in range(1, _MAX_RETRIES + 1):
         response = llm.invoke([
             SystemMessage(content=_SYSTEM_PROMPT),
             HumanMessage(content=user_content),
@@ -133,7 +172,7 @@ def code_generator_node(state: GraphState) -> dict:
         if syntax_error is None:
             last_code = full_code
             break
-        # syntax error — retry with the same prompt
+        # syntax error — retry with the error context
         last_code = full_code  # keep last attempt even if broken
 
     return {

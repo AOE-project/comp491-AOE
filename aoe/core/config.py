@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     log_output_dir: str = "./logs"
     use_dummy_analyser: bool = False
     use_dummy_code_generator: bool = False
+    use_dummy_regeneration: bool = False
+    
+    # Error testing (debug flow validation)
+    test_error_injection: bool = False
+    test_error_type: str = "syntax_error"  # syntax_error | runtime_error | modeling_error | unknown_error
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

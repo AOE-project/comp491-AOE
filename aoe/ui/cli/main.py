@@ -196,9 +196,16 @@ def run(
         console.print("[bold red]Code generation failed — no script produced.[/bold red]")
         raise typer.Exit(1)
 
-    # ── Solver result ─────────────────────────────────────────────────────
-    solver_result = state.get("solver_result") or {}
-    if solver_result:
+    # ── Solver result with error recovery loop ────────────────────────────
+    max_recovery_attempts = 3
+    recovery_attempt = 0
+    
+    while recovery_attempt < max_recovery_attempts:
+        # Run solver
+        state = handle.run("", state)
+        recovery_attempt += 1
+        
+        solver_result = state.get("solver_result") or {}
         status = solver_result.get("status", "")
         stdout = (solver_result.get("stdout") or "").strip()
         stderr = (solver_result.get("stderr") or "").strip()
@@ -206,9 +213,37 @@ def run(
         if status == "success":
             console.print("\n[bold green]Solver Result:[/bold green]")
             console.print(Panel(stdout, border_style="green", padding=(0, 1)))
+            break  # Success — exit loop
         else:
             console.print(f"\n[bold red]Solver Error ({status}):[/bold red]")
             console.print(Panel(stderr, border_style="red", padding=(0, 1)))
+            
+            # Check error type for recovery routing
+            error_type = state.get("last_error_type")
+            
+            if error_type == "max_retries_exceeded":
+                console.print("\n[bold red]Max recovery attempts exceeded.[/bold red]")
+                break
+            elif error_type == "data_error":
+                console.print("\n[bold yellow]Data error detected — restarting data collection...[/bold yellow]")
+                error_msg = state.get("last_execution_error", "Data validation failed")
+                console.print(f"[dim]{error_msg}[/dim]\n")
+                state = _run_input_retrieval(handle, state)
+            elif error_type == "code_error":
+                console.print("\n[bold yellow]Code error detected — regenerating code...[/bold yellow]")
+                error_msg = state.get("last_execution_error", "Code generation failed")
+                console.print(f"[dim]{error_msg}[/dim]\n")
+                state = handle.run("", state)  # Trigger code_generator
+            elif error_type == "model_error":
+                console.print("\n[bold yellow]Model error detected — re-analyzing model...[/bold yellow]")
+                error_msg = state.get("last_execution_error", "Model optimization failed")
+                console.print(f"[dim]{error_msg}[/dim]\n")
+                console.print("[dim]Please re-answer the model questions:[/dim]\n")
+                state = handle.run("", state)  # Trigger analyser
+            else:
+                # Unknown error type or no recovery — exit
+                console.print(f"\n[bold red]Unknown error type: {error_type}[/bold red]")
+                break
 
 
 if __name__ == "__main__":
