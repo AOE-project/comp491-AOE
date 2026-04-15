@@ -49,6 +49,28 @@ def _build_bot_text(state: dict) -> str:
             )
         return f"Please provide data for **{pname}** using the panel below."
 
+    # Solver result available
+    solver_result = (state.get("solver_result") or {})
+    generated_code = (state.get("generated_code") or "").strip()
+    if solver_result and generated_code:
+        status  = solver_result.get("status", "")
+        stdout  = (solver_result.get("stdout") or "").strip()
+        stderr  = (solver_result.get("stderr") or "").strip()
+        parts   = [f"**Generated Gurobi script:**\n\n```python\n{generated_code}\n```"]
+        if status == "success":
+            parts.append(f"**Result:**\n```\n{stdout}\n```")
+        else:
+            parts.append(f"**Run error ({status}):**\n```\n{stderr}\n```")
+        return "\n\n".join(parts)
+
+    # Code generation complete (solver not yet run)
+    generated_code = (state.get("generated_code") or "").strip()
+    if generated_code:
+        syntax_error = state.get("code_syntax_error")
+        if syntax_error:
+            return f"**Code generated with syntax error:**\n> {syntax_error}\n\n```python\n{generated_code}\n```"
+        return f"**Generated Gurobi script:**\n\n```python\n{generated_code}\n```"
+
     # Normal analyser mode
     parts   = []
     summary = (state.get("analysis_summary") or "").strip()

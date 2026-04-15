@@ -5,18 +5,19 @@ Nodes, conditional routing, and the compiled graph.
 Entry point is always AOEHandle (middleware/handle.py), never called directly.
 
 Routing logic:
-  analyser        → if analyser_approved → input_retrieval
-                  → otherwise            → END (await answers or approval)
-  input_retrieval → if current_input_spec empty → code_generator
-                  → otherwise                   → END (await next data item)
+  analyser → if open_questions is empty AND analyser_approved → code_generator
+           → if open_questions is empty AND not approved      → END (await user approval)
+           → if open_questions not empty                      → END (await user answers)
 """
 
 from langgraph.graph import StateGraph, END
 
 from agents.analyser import analyser_node
+from agents.code_generator import code_generator_node
 from agents.input_retrieval import input_retrieval_node
 from core.config import load_settings
 from core.state import GraphState
+from solver.runner import solver_node
 
 
 # Dummy analyser node — no LLM calls, no token usage.
@@ -32,7 +33,6 @@ def dummy_analyser_node(state: GraphState) -> dict:
     Turn 1: returns open questions.
     Turn 2+: clears questions and marks the model ready for approval.
     """
-    # Model already approved — pass through so the router advances.
     if state.get("analyser_approved"):
         return {}
 
@@ -89,15 +89,39 @@ def dummy_analyser_node(state: GraphState) -> dict:
     }
 
 
-_analyser = dummy_analyser_node if load_settings().use_dummy_analyser else analyser_node
+_settings = load_settings()
+
+_analyser = dummy_analyser_node if _settings.use_dummy_analyser else analyser_node
 
 
-# Placeholder nodes 
+def dummy_code_generator_node(state: GraphState) -> dict:
+    """
+    Replacement for code_generator_node for UI / integration development.
+    Returns a minimal but syntactically valid gurobipy stub so the rest of
+    the pipeline can be exercised without spending tokens.
+    Activate with USE_DUMMY_CODE_GENERATOR=true in your .env file.
+    """
+    raw_data = state.get("raw_data", {})
+    return {
+        "generated_code": (
+            "# [DUMMY] Code generation skipped — USE_DUMMY_CODE_GENERATOR=true\n"
+            "import gurobipy as gp\n"
+            "from gurobipy import GRB\n\n"
+            f"# raw_data keys available: {list(raw_data.keys())}\n\n"
+            "m = gp.Model('dummy')\n"
+            "m.Params.OutputFlag = 0\n"
+            "m.optimize()\n"
+            "result = {'status': 'dummy', 'objective_value': None, 'variables': {}}\n"
+            "print(result)\n"
+        )
+    }
 
 
-def code_generator_node(state: GraphState) -> dict:
-    print("[CodeGenerator] Generating Gurobi script from MILP model...")
-    return {"generated_code": "# to be implemented"}
+_code_generator = (
+    dummy_code_generator_node
+    if _settings.use_dummy_code_generator
+    else code_generator_node
+)
 
 
 def explainer_node(state: GraphState) -> dict:
@@ -140,13 +164,15 @@ _builder = StateGraph(GraphState)
 
 _builder.add_node("analyser", _analyser)
 _builder.add_node("input_retrieval", input_retrieval_node)
-_builder.add_node("code_generator", code_generator_node)
+_builder.add_node("code_generator", _code_generator)
+_builder.add_node("solver", solver_node)
 _builder.add_node("explainer", explainer_node)
 
 _builder.set_entry_point("analyser")
 _builder.add_conditional_edges("analyser", _route_after_analyser)
 _builder.add_conditional_edges("input_retrieval", _route_after_input_retrieval)
-_builder.add_edge("code_generator", "explainer")
+_builder.add_edge("code_generator", "solver")
+_builder.add_edge("solver", "explainer")
 _builder.add_edge("explainer", END)
 
 compiled_graph = _builder.compile()
