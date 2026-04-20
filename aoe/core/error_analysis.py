@@ -27,30 +27,31 @@ class ErrorContext:
     
     def _classify_error(self) -> str:
         """
-        Classify error into categories:
-        - "syntax_error": Python syntax/parsing issues
-        - "runtime_error": Missing variables, undefined names
-        - "modeling_error": Gurobi API misuse, indexing errors
-        - "unknown_error": Can't determine
+        Classify error into 4 categories:
+        1. "syntax_error": Python syntax parsing issues
+        2. "runtime_error": Undefined variables/names
+        3. "modeling_error": Gurobi API misuse
+        4. "unknown_error": Other errors
         """
         msg = self.error_message.lower()
         
-        # Syntax errors
+        # 1. Syntax errors - Python syntax parsing
         if any(x in msg for x in ["syntaxerror", "invalid syntax", "unexpected"]):
             return "syntax_error"
         
-        # Runtime errors - undefined variables/names
+        # 2. Runtime errors - Undefined variables/names
         if any(x in msg for x in ["nameerror", "undefined", "not defined", "not found"]):
             return "runtime_error"
         
-        # Gurobi/Modeling errors
+        # 3. Modeling errors - Gurobi API misuse
         if any(x in msg for x in ["gurobipy", "quicksum", "attr", "gurobi", "addvars", "addconstr"]):
             return "modeling_error"
         
+        # 4. Unknown errors - everything else
         return "unknown_error"
     
     def _analyze_error(self) -> dict:
-        """Analyze error and suggest potential causes."""
+        """Analyze error and suggest potential causes for 4 error types."""
         analysis = {
             "error_type": self.error_type,
             "causes": [],
@@ -69,7 +70,7 @@ class ErrorContext:
                 "Ensure Gurobi API calls match function signatures"
             ]
         
-        if self.error_type == "runtime_error":
+        elif self.error_type == "runtime_error":
             # Extract variable name if possible
             var_match = re.search(r"name '(\w+)' is not defined", self.error_message)
             if var_match:
@@ -96,7 +97,7 @@ class ErrorContext:
                     "Ensure all required imports are present"
                 ]
         
-        if self.error_type == "modeling_error":
+        elif self.error_type == "modeling_error":
             analysis["causes"] = [
                 "Incorrect Gurobi API usage (wrong method or parameters)",
                 "Index mismatch when accessing sets or parameters",

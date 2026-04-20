@@ -104,48 +104,17 @@ def dummy_code_generator_node(state: GraphState) -> dict:
     
     Error testing controlled via .env:
       TEST_ERROR_INJECTION: Enable/disable error injection
-      TEST_ERROR_TYPE: code_error | model_error
+      TEST_ERROR_TYPE: syntax_error | runtime_error | modeling_error | unknown_error
+    
+    NOTE: For syntax_error, runtime_error, and modeling_error testing:
+    Error injection actually occurs in solver_node, based on regeneration_attempts.
+    This node always returns valid (syntactically correct) code.
     """
-    if _settings.test_error_injection:
-        if _settings.test_error_type == "code_error":
-            # Return incomplete/broken code to trigger syntax error → code_error path
-            return {
-                "generated_code": (
-                    "import gurobipy as gp\n"
-                    "from gurobipy import GRB\n\n"
-                    "m = gp.Model('broken')\n"
-                    "# Missing variable definition\n"
-                    "m.addConstrs(\n"
-                    "    (gp.quicksum(x[i,j] for j in J) <= s[i] for i in I),  # x undefined!\n"
-                    "    name='supply'\n"
-                    ")\n"
-                    # Intentional incomplete: missing closing
-                ),
-                "code_syntax_error": "NameError: name 'x' is not defined",
-            }
-        
-        elif _settings.test_error_type == "model_error":
-            # Return code that creates an infeasible model → model_error path
-            return {
-                "generated_code": (
-                    "import gurobipy as gp\n"
-                    "from gurobipy import GRB\n\n"
-                    "m = gp.Model('infeasible_model')\n"
-                    "m.Params.OutputFlag = 0\n"
-                    "# Create infeasible constraints\n"
-                    "x = m.addVar(lb=0, ub=10, name='x')\n"
-                    "m.addConstr(x >= 20, name='lower')  # x >= 20\n"
-                    "m.addConstr(x <= 5, name='upper')   # x <= 5 — INFEASIBLE!\n"
-                    "m.setObjective(x, GRB.MINIMIZE)\n"
-                    "m.optimize()\n"
-                    "if m.status == GRB.INFEASIBLE:\n"
-                    "    print('Model is infeasible.')\n"
-                    "    raise ValueError('Model is infeasible')\n"
-                ),
-                "code_syntax_error": None,
-            }
+    # Always return valid code — solver_node handles error injection based on
+    # TEST_ERROR_INJECTION setting and regeneration_attempts counter
     
     raw_data = state.get("raw_data", {})
+    
     return {
         "generated_code": (
             "# [DUMMY] Code generation skipped — USE_DUMMY_CODE_GENERATOR=true\n"
@@ -185,36 +154,10 @@ def dummy_regeneration_node(state: GraphState) -> dict:
     attempts = state.get("debug_attempts", [])
     attempt_count = len(attempts)
     
-    # Map new error types to old ones for backward compatibility
-    if error_type in ["syntax_error", "runtime_error", "modeling_error"]:
-        error_category = "code_error"
-    elif error_type == "logical_error":
-        error_category = "model_error"
-    else:
-        error_category = error_type
+    # Route based on error type
+    code_gen_errors = ["syntax_error", "runtime_error", "modeling_error"]
     
-    if error_category == "data_error":
-        # Mock: clear error AND fix the data so it has correct shape
-        fixed_raw_data = state.get("raw_data", {})
-        
-        # If cost has wrong shape, fix it to 3×3
-        if "cost" in fixed_raw_data:
-            fixed_raw_data["cost"] = {
-                'W1': {'S1': 2.0, 'S2': 3.0, 'S3': 1.0},
-                'W2': {'S1': 5.0, 'S2': 4.0, 'S3': 8.0},
-                'W3': {'S1': 5.0, 'S2': 6.0, 'S3': 8.0}
-            }
-        
-        return {
-            "last_execution_error": None,
-            "last_error_type": None,
-            "raw_data": fixed_raw_data,
-            "history": state.get("history", []) + [
-                {"role": "system", "content": "[DEBUG] Data shape mismatch detected. Fixed data to correct shape (3×3)."}
-            ],
-        }
-    
-    elif error_category == "code_error":
+    if error_type in code_gen_errors:
         # Mock: demonstrate multi-attempt recovery
         # Attempt 1: Still broken
         # Attempt 2+: Fixed
@@ -261,19 +204,8 @@ def dummy_regeneration_node(state: GraphState) -> dict:
             "regeneration_attempts": regeneration_attempts,
         }
     
-    elif error_category == "model_error":
-        # Mock: clear error, model re-analyzed
-        return {
-            "last_execution_error": None,
-            "last_error_type": None,
-            "analyser_approved": False,
-            "history": state.get("history", []) + [
-                {"role": "system", "content": "[DEBUG] Model is infeasible/unbounded. Restarting analysis."}
-            ],
-        }
-    
     else:
-        # unknown error - signal failure
+        # unknown_error or other unhandled types - signal failure
         return {
             "last_execution_error": None,
             "last_error_type": None,

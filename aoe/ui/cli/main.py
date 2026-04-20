@@ -224,11 +224,6 @@ def run(
             if error_type == "max_retries_exceeded":
                 console.print("\n[bold red]Max recovery attempts exceeded.[/bold red]")
                 break
-            elif error_type == "data_error":
-                console.print("\n[bold yellow]Data error detected — restarting data collection...[/bold yellow]")
-                error_msg = state.get("last_execution_error", "Data validation failed")
-                console.print(f"[dim]{error_msg}[/dim]\n")
-                state = _run_input_retrieval(handle, state)
             elif error_type == "code_error":
                 console.print("\n[bold yellow]Code error detected — regenerating code...[/bold yellow]")
                 error_msg = state.get("last_execution_error", "Code generation failed")

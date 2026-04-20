@@ -50,7 +50,7 @@ def run_generated_code(code: str) -> dict:
             text=True,
             timeout=_TIMEOUT_SECONDS,
         )
-        status = "success" if proc.returncode == 0 else "runtime_error"
+        status = "success" if proc.returncode == 0 else "failed"
         return {
             "status":     status,
             "stdout":     proc.stdout,
@@ -78,7 +78,7 @@ def solver_node(state: GraphState) -> dict:
     If execution fails, also sets last_execution_error for debug routing.
     
     Error testing via .env:
-      TEST_ERROR_INJECTION=true + TEST_ERROR_TYPE=data_error
+      TEST_ERROR_INJECTION=true + TEST_ERROR_TYPE=syntax_error|runtime_error|modeling_error
     
     Multi-attempt recovery: Skip error injection on 2nd+ regeneration attempts
     so the fixed code can actually execute and succeed.
@@ -96,7 +96,7 @@ def solver_node(state: GraphState) -> dict:
         error_messages = {
             "syntax_error": "SyntaxError: invalid syntax at line 5",
             "runtime_error": "NameError: name 'x' is not defined",
-            "modeling_error": "AttributeError: gurobipy Model object has no attribute 'addVariable'",
+            "modeling_error": "GurobiPy error: model.addvars() received invalid argument",
             "unknown_error": "UnexpectedError: Something went wrong",
         }
         error_type = getattr(_settings, "test_error_type", "syntax_error")
@@ -104,7 +104,7 @@ def solver_node(state: GraphState) -> dict:
         
         return {
             "solver_result": {
-                "status": "runtime_error",
+                "status": "failed",
                 "stdout": "",
                 "stderr": error_msg,
                 "returncode": 1,
@@ -117,7 +117,7 @@ def solver_node(state: GraphState) -> dict:
         error_msg = "No generated code found in state."
         return {
             "solver_result": {
-                "status":     "runtime_error",
+                "status":     "failed",
                 "stdout":     "",
                 "stderr":     error_msg,
                 "returncode": -1,
