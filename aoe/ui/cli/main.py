@@ -197,7 +197,7 @@ def run(
         raise typer.Exit(1)
 
     # ── Solver result with error recovery loop ────────────────────────────
-    max_recovery_attempts = 3
+    max_recovery_attempts = 5
     recovery_attempt = 0
     
     while recovery_attempt < max_recovery_attempts:
@@ -224,20 +224,19 @@ def run(
             if error_type == "max_retries_exceeded":
                 console.print("\n[bold red]Max recovery attempts exceeded.[/bold red]")
                 break
-            elif error_type == "code_error":
+            elif error_type in ["syntax_error", "runtime_error", "modeling_error"]:
                 console.print("\n[bold yellow]Code error detected — regenerating code...[/bold yellow]")
                 error_msg = state.get("last_execution_error", "Code generation failed")
                 console.print(f"[dim]{error_msg}[/dim]\n")
                 state = handle.run("", state)  # Trigger code_generator
-            elif error_type == "model_error":
-                console.print("\n[bold yellow]Model error detected — re-analyzing model...[/bold yellow]")
-                error_msg = state.get("last_execution_error", "Model optimization failed")
+            elif error_type == "unknown_error":
+                console.print("\n[bold yellow]Unknown error — attempting recovery...[/bold yellow]")
+                error_msg = state.get("last_execution_error", "Unknown error")
                 console.print(f"[dim]{error_msg}[/dim]\n")
-                console.print("[dim]Please re-answer the model questions:[/dim]\n")
-                state = handle.run("", state)  # Trigger analyser
+                state = handle.run("", state)
             else:
-                # Unknown error type or no recovery — exit
-                console.print(f"\n[bold red]Unknown error type: {error_type}[/bold red]")
+                # No error type set or recovery complete
+                console.print(f"\n[bold red]Unhandled error type: {error_type}[/bold red]")
                 break
 
 
