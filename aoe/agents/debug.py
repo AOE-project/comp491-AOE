@@ -53,7 +53,11 @@ def debug_node(state: GraphState) -> dict:
     # Track attempt
     attempts = state.get("debug_attempts", [])
     attempt_count = len(attempts) + 1
-    print(f"[DEBUG] debug_node: attempt_count={attempt_count}, regeneration_attempts={state.get('regeneration_attempts', 0)}, max_debug={state.get('max_debug_attempts', 5)}")
+    print(f"[DEBUG] debug_node: attempt_count={attempt_count}, regeneration_attempts={state.get('regeneration_attempts', 0)}, error_type={error_context.error_type}, max_debug={state.get('max_debug_attempts', 5)}")
+    print(f"[ERROR MESSAGE] {error}")
+    print(f"[CLASSIFICATION] Error Type: {error_context.error_type.upper()}")
+    print(f"[CAUSES] {error_context.analysis.get('causes', [])}")
+    print(f"[RECOVERY HINTS] {error_context.analysis.get('recovery_hints', [])}")
     previous_failed_attempts = [
         {
             "error_message": a.get("error", ""),

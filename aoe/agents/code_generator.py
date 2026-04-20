@@ -133,11 +133,14 @@ def code_generator_node(state: GraphState) -> dict:
     """
     llm          = get_llm_client()
     
-    # Check if regenerating due to code_error
-    is_regenerating = state.get("last_error_type") == "code_error"
+    # Check if regenerating due to code errors
+    code_errors = ["syntax_error", "runtime_error", "modeling_error"]
+    is_regenerating = state.get("last_error_type") in code_errors
     error_context_obj = None
     
     if is_regenerating:
+        print(f"[DEBUG] code_generator_node: is_regenerating=True, error_type={state.get('last_error_type')}, regeneration_attempts={state.get('regeneration_attempts', 0)}")
+        print(f"[REGENERATION] Attempting fix for {state.get('last_error_type').upper()} error")
         # Create ErrorContext for strategic prompting
         error_message = state.get("last_execution_error", "Unknown error")
         generated_code = state.get("generated_code", "")
@@ -178,4 +181,5 @@ def code_generator_node(state: GraphState) -> dict:
     return {
         "generated_code": last_code,
         "code_syntax_error": syntax_error,
+        "regeneration_attempts": state.get("regeneration_attempts", 0) + 1 if is_regenerating else state.get("regeneration_attempts", 0),
     }

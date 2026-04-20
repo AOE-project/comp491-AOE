@@ -11,6 +11,8 @@ Routing logic:
 """
 
 from langgraph.graph import StateGraph, END
+import io
+import sys
 
 from agents.analyser import analyser_node
 from agents.code_generator import code_generator_node
@@ -19,6 +21,31 @@ from agents.input_retrieval import input_retrieval_node
 from core.config import load_settings
 from core.state import GraphState
 from solver.runner import solver_node
+
+
+# ============ DEBUG LOG CAPTURE ============
+def _capture_debug_output(node_fn, state: GraphState) -> tuple[dict, list]:
+    """
+    Capture stdout during node execution and extract debug log lines.
+    Returns (node_result, debug_logs) where debug_logs is a list of strings.
+    """
+    # Capture stdout
+    old_stdout = sys.stdout
+    sys.stdout = io.StringIO()
+    
+    try:
+        result = node_fn(state)
+    finally:
+        captured_output = sys.stdout.getvalue()
+        sys.stdout = old_stdout
+    
+    # Extract debug/error lines from captured output
+    debug_logs = []
+    for line in captured_output.strip().split('\n'):
+        if line.strip():
+            debug_logs.append(line)
+    
+    return result, debug_logs
 
 
 # Dummy analyser node — no LLM calls, no token usage.
@@ -115,6 +142,15 @@ def dummy_code_generator_node(state: GraphState) -> dict:
     
     raw_data = state.get("raw_data", {})
     
+    # Only increment regeneration_attempts if this is a regeneration (not initial generation)
+    last_error_type = state.get("last_error_type")
+    code_errors = ["syntax_error", "runtime_error", "modeling_error"]
+    is_regenerating = last_error_type in code_errors
+    
+    if is_regenerating:
+        print(f"[DEBUG] dummy_code_generator_node: is_regenerating=True, error_type={last_error_type}, regeneration_attempts={state.get('regeneration_attempts', 0)}")
+        print(f"[REGENERATION] Attempting fix for {last_error_type.upper()} error")
+    
     return {
         "generated_code": (
             "# [DUMMY] Code generation skipped — USE_DUMMY_CODE_GENERATOR=true\n"
@@ -126,7 +162,8 @@ def dummy_code_generator_node(state: GraphState) -> dict:
             "m.optimize()\n"
             "result = {'status': 'dummy', 'objective_value': None, 'variables': {}}\n"
             "print(result)\n"
-        )
+        ),
+        "regeneration_attempts": state.get("regeneration_attempts", 0) + 1 if is_regenerating else state.get("regeneration_attempts", 0),
     }
 
 
@@ -225,6 +262,40 @@ def explainer_node(state: GraphState) -> dict:
 
 
 
+# ============ NODE WRAPPERS FOR DEBUG LOG CAPTURE ============
+def _solver_node_wrapped(state: GraphState) -> dict:
+    """Solver node with debug log capture."""
+    result, debug_logs = _capture_debug_output(solver_node, state)
+    debug_logs_current = state.get("debug_logs", [])
+    result["debug_logs"] = debug_logs_current + debug_logs
+    return result
+
+
+def _debug_node_wrapped(state: GraphState) -> dict:
+    """Debug node with debug log capture."""
+    result, debug_logs = _capture_debug_output(debug_node, state)
+    debug_logs_current = state.get("debug_logs", [])
+    result["debug_logs"] = debug_logs_current + debug_logs
+    return result
+
+
+def _code_generator_wrapped(state: GraphState) -> dict:
+    """Code generator node with debug log capture."""
+    result, debug_logs = _capture_debug_output(_code_generator, state)
+    debug_logs_current = state.get("debug_logs", [])
+    result["debug_logs"] = debug_logs_current + debug_logs
+    return result
+
+
+def _regeneration_wrapped(state: GraphState) -> dict:
+    """Regeneration node with debug log capture."""
+    result, debug_logs = _capture_debug_output(_regeneration, state)
+    debug_logs_current = state.get("debug_logs", [])
+    result["debug_logs"] = debug_logs_current + debug_logs
+    return result
+
+
+
 # Routing
 
 
@@ -292,14 +363,14 @@ _builder = StateGraph(GraphState)
 
 _builder.add_node("analyser", _analyser)
 _builder.add_node("input_retrieval", input_retrieval_node)
-_builder.add_node("code_generator", _code_generator)
-_builder.add_node("solver", solver_node)
-_builder.add_node("debug", debug_node)
+_builder.add_node("code_generator", _code_generator_wrapped)
+_builder.add_node("solver", _solver_node_wrapped)
+_builder.add_node("debug", _debug_node_wrapped)
 _builder.add_node("explainer", explainer_node)
 
 # Add dummy_regeneration node if enabled
 if _regeneration:
-    _builder.add_node("dummy_regeneration", _regeneration)
+    _builder.add_node("dummy_regeneration", _regeneration_wrapped)
 
 _builder.set_entry_point("analyser")
 _builder.add_conditional_edges("analyser", _route_after_analyser)

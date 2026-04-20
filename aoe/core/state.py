@@ -48,3 +48,6 @@ class GraphState(TypedDict):
 
     # Token tracking
     token_usage: dict
+
+    # Debug logs for UI display
+    debug_logs: list                # list of debug message strings from nodes

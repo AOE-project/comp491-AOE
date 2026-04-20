@@ -84,11 +84,11 @@ def solver_node(state: GraphState) -> dict:
     so the fixed code can actually execute and succeed.
     """
     # TEST MODE: Inject specific error type for debug flow testing
-    # BUT: Skip injection on 2nd+ regeneration attempt to allow fixed code to run
+    # BUT: Skip injection on regeneration attempts to allow fixed code to run
     regeneration_attempts = state.get("regeneration_attempts", 0)
     should_inject_error = (
         _settings.test_error_injection and 
-        regeneration_attempts < 2  # Only inject on 1st attempt
+        regeneration_attempts == 0  # Only inject on 1st attempt (no regenerations yet)
     )
     print(f"[DEBUG] solver_node: regeneration_attempts={regeneration_attempts}, should_inject_error={should_inject_error}, test_error_injection={_settings.test_error_injection}")
     
@@ -101,6 +101,8 @@ def solver_node(state: GraphState) -> dict:
         }
         error_type = getattr(_settings, "test_error_type", "syntax_error")
         error_msg = error_messages.get(error_type, error_messages["syntax_error"])
+        print(f"[INJECTING ERROR] Type: {error_type.upper()}")
+        print(f"[ERROR MESSAGE] {error_msg}")
         
         return {
             "solver_result": {
