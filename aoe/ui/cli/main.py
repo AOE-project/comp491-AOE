@@ -225,18 +225,14 @@ def run(
                 console.print("\n[bold red]Max recovery attempts exceeded.[/bold red]")
                 break
             elif error_type in ["syntax_error", "runtime_error", "modeling_error"]:
+                # Code errors — regenerate and retry
                 console.print("\n[bold yellow]Code error detected — regenerating code...[/bold yellow]")
                 error_msg = state.get("last_execution_error", "Code generation failed")
                 console.print(f"[dim]{error_msg}[/dim]\n")
                 state = handle.run("", state)  # Trigger code_generator
-            elif error_type == "unknown_error":
-                console.print("\n[bold yellow]Unknown error — attempting recovery...[/bold yellow]")
-                error_msg = state.get("last_execution_error", "Unknown error")
-                console.print(f"[dim]{error_msg}[/dim]\n")
-                state = handle.run("", state)
             else:
-                # No error type set or recovery complete
-                console.print(f"\n[bold red]Unhandled error type: {error_type}[/bold red]")
+                # unknown_error or other — end recovery and show result
+                console.print("\n[bold red]Unknown error — showing final result.[/bold red]")
                 break
 
 
