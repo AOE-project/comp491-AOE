@@ -27,6 +27,43 @@ _attached_file_path: Optional[str] = None
 
 # ============ CORE HELPERS ============
 
+def _make_df_for_spec(spec: dict) -> tuple[Optional[pd.DataFrame], bool]:
+    """
+    Build a DataFrame to display in the data panel.
+    Returns (dataframe, should_show_dataframe)
+    
+    If dimension > 10, don't show the interactive table (only file upload allowed).
+    """
+    if not spec:
+        return None, False
+    
+    param_name = spec.get("param_name", "")
+    row_labels = spec.get("row_labels", [])
+    col_labels = spec.get("col_labels", [])
+    
+    # Both 1D and 2D parameters can have row_labels
+    if row_labels and not col_labels:
+        # 1D parameter: single column with row indices
+        if len(row_labels) > 10:
+            return None, False  # Too large, skip dataframe
+        df = pd.DataFrame({param_name: [None] * len(row_labels)}, index=row_labels)
+        return df, True
+    
+    if row_labels and col_labels:
+        # 2D parameter: rows × cols
+        if len(row_labels) > 10 or len(col_labels) > 10:
+            return None, False  # Too large
+        df = pd.DataFrame(
+            [[None] * len(col_labels) for _ in row_labels],
+            index=row_labels,
+            columns=col_labels
+        )
+        return df, True
+    
+    # Scalar: no dataframe needed
+    return None, False
+
+
 def _build_bot_text(state: dict) -> str:
     spec      = (state or {}).get("current_input_spec") or {}
     spec_type = spec.get("type", "")
@@ -270,6 +307,7 @@ def _build_all_outputs(state: dict, chat_history: list, clear_msg: bool = False)
     spec_type = spec.get("type", "")
     is_param  = spec_type == "param_data"
     is_scalar = is_param and (spec.get("is_scalar") or not spec.get("row_labels"))
+    is_tabular = is_param and not is_scalar
 
     bot_text    = _build_bot_text(state)
     # Preserve the full conversation — append bot reply to whatever is already displayed.
@@ -280,10 +318,9 @@ def _build_all_outputs(state: dict, chat_history: list, clear_msg: bool = False)
     has_run          = (state or {}).get("iteration_count", 0) > 0
     approve_vis = gr.update(visible=has_run and not questions and not spec_type and not_approved_yet)
 
-    # Scalars are collected via the normal chat input, not the data panel
-    msg_row_vis   = gr.update(visible=True)  # Always visible for attachment button access
-    # Data panel is hidden — file uploads handled via attach button
-    data_panel_vis = gr.update(visible=False)
+    # Scalars use normal chat input; tabular uses data panel
+    msg_row_vis   = gr.update(visible=not is_tabular)
+    data_panel_vis = gr.update(visible=is_tabular)
 
     prompt = spec.get("prompt", "") if is_param else ""
 
@@ -293,12 +330,20 @@ def _build_all_outputs(state: dict, chat_history: list, clear_msg: bool = False)
         value=f"> **Error:** {error}" if error else "",
     )
 
+    # Build dataframe for tabular data if needed
+    df_for_spec, df_should_show = _make_df_for_spec(spec) if is_tabular else (None, False)
+    param_df_upd = gr.update(
+        value=df_for_spec,
+        visible=df_should_show,
+        label=f"Edit {spec.get('param_name', 'parameter')}" if df_should_show else "",
+    ) if is_param else gr.update(value=None, visible=False)
+
     model_info, conf, unconf = _format_sidebar(state)
     pipeline_html = _build_pipeline_status(state)
 
-    # Disable message input during param_data collection (user should use attachment button)
-    msg_input_upd = gr.update(value="", interactive=False) if (clear_msg and is_param) else (
-        gr.update(value="") if clear_msg else gr.update(interactive=not is_param)
+    # During tabular data collection, disable message input
+    msg_input_upd = gr.update(value="", interactive=False) if (clear_msg and is_tabular) else (
+        gr.update(value="") if clear_msg else gr.update(interactive=not is_tabular)
     )
 
     return (
@@ -310,6 +355,7 @@ def _build_all_outputs(state: dict, chat_history: list, clear_msg: bool = False)
         prompt,                              # data_prompt_md
         error_upd,                           # data_error_md
         gr.update(value=None),               # param_file
+        param_df_upd,                        # param_df
         model_info,                          # model_display
         conf,                                # confirmed_display
         unconf,                              # unconfirmed_display
@@ -361,14 +407,14 @@ def _process_message(user_message: str, chat_history: list):
     except Exception as e:
         chat_history.append({"role": "assistant", "content": f"**Error:** {str(e)}"})
         _attached_file_path = None
-        return ("", chat_history) + (gr.update(),) * 10
+        return ("", chat_history) + (gr.update(),) * 11
 
 
 def _approve(chat_history: list):
     """User clicked Approve — set analyser_approved and advance graph."""
     global _current_state
     if _current_state is None:
-        return (gr.update(),) * 12
+        return (gr.update(),) * 13
 
     _current_state["analyser_approved"] = True
     _current_state = _aoe_handle.run("__approved__", _current_state)
@@ -387,6 +433,7 @@ def _request_changes(chat_history: list):
         gr.update(),                # data_prompt_md
         gr.update(),                # data_error_md
         gr.update(value=None),      # param_file
+        gr.update(value=None),      # param_df
         gr.update(),                # model_display
         gr.update(),                # confirmed_display
         gr.update(),                # unconfirmed_display
@@ -394,15 +441,21 @@ def _request_changes(chat_history: list):
     )
 
 
-def _submit_param_data(file, chat_history: list):
-    """User submitted parameter data via CSV file upload."""
+def _submit_param_data(file, df_data, chat_history: list):
+    """User submitted parameter data via CSV file upload or table edit."""
     global _current_state
     spec = (_current_state or {}).get("current_input_spec") or {}
 
+    # Prioritize file upload; fall back to table edit
     if file is not None:
         answer = file if isinstance(file, str) else file.name
+    elif df_data is not None and isinstance(df_data, pd.DataFrame) and not df_data.empty:
+        # Convert table to CSV and pass as file
+        csv_buffer = io.StringIO()
+        df_data.to_csv(csv_buffer)
+        answer = csv_buffer.getvalue()
     else:
-        err_spec = {**spec, "error": "Please upload a CSV file."}
+        err_spec = {**spec, "error": "Please upload a CSV file or edit the table."}
         _current_state = {**(_current_state or {}), "current_input_spec": err_spec}
         return _build_all_outputs(_current_state, chat_history)
 
@@ -411,7 +464,7 @@ def _submit_param_data(file, chat_history: list):
         return _build_all_outputs(_current_state, chat_history)
     except Exception as e:
         chat_history.append({"role": "assistant", "content": f"**Error:** {str(e)}"})
-        return (gr.update(),) * 12
+        return (gr.update(),) * 13
 
 
 def _reset_session():
@@ -430,6 +483,7 @@ def _reset_session():
         "",                          # data_prompt_md
         gr.update(visible=False, value=""),  # data_error_md
         gr.update(value=None),       # param_file
+        gr.update(value=None),       # param_df
         "*Awaiting problem description...*",    # model_display
         "*No assumptions confirmed yet.*",      # confirmed_display
         "*No assumptions to review yet.*",      # unconfirmed_display
@@ -477,10 +531,18 @@ with gr.Blocks(title="AOE — Automated Optimization Engineer", css=custom_css) 
             with gr.Group(visible=False, elem_classes=["data-panel"]) as data_panel:
                 data_prompt_md = gr.Markdown("", elem_classes=["data-prompt"])
                 data_error_md  = gr.Markdown("", visible=False, elem_classes=["data-error"])
-                param_file = gr.File(
-                    label="Upload CSV",
-                    file_types=[".csv"],
-                )
+                with gr.Row():
+                    param_file = gr.File(
+                        label="Upload CSV",
+                        file_types=[".csv"],
+                        scale=1,
+                    )
+                    param_df = gr.Dataframe(
+                        label="Or edit manually (available when each dimension ≤ 10)",
+                        interactive=True,
+                        visible=False,
+                        scale=2,
+                    )
                 data_submit_btn = gr.Button(
                     "Submit Data",
                     variant="primary",
@@ -526,7 +588,10 @@ with gr.Blocks(title="AOE — Automated Optimization Engineer", css=custom_css) 
 
             reset_btn = gr.Button("New Session", variant="secondary")
 
-    # ── All callbacks share the same 12-element output list ──────────────
+    # ── All callbacks share the same 13-element output list ──────────────
+    # msg_input, chatbot, approve_row, msg_row,
+    # data_panel, data_prompt_md, data_error_md, param_file, param_df,
+    # model_display, confirmed_display, unconfirmed_display, pipeline_status
     ALL_OUTPUTS = [
         msg_input,
         chatbot,
@@ -536,6 +601,7 @@ with gr.Blocks(title="AOE — Automated Optimization Engineer", css=custom_css) 
         data_prompt_md,
         data_error_md,
         param_file,
+        param_df,
         model_display,
         confirmed_display,
         unconfirmed_display,
@@ -572,7 +638,7 @@ with gr.Blocks(title="AOE — Automated Optimization Engineer", css=custom_css) 
 
     data_submit_btn.click(
         fn=_submit_param_data,
-        inputs=[param_file, chatbot],
+        inputs=[param_file, param_df, chatbot],
         outputs=ALL_OUTPUTS,
     )
 
