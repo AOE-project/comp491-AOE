@@ -53,7 +53,7 @@ def _validate(output: dict) -> None:
     validator.validate(output)
 
 
-def _build_user_message(state: GraphState, error_context: str = None) -> str:
+def _build_user_message(state: GraphState) -> str:
     """Construct the user-turn content sent to the LLM."""
     payload = {
         "user_message": state.get("history", [{}])[-1].get("content", "")
@@ -62,15 +62,7 @@ def _build_user_message(state: GraphState, error_context: str = None) -> str:
         "previous_output": state.get("analyser_output"),
         "user_answers": None,
     }
-    
-    result = json.dumps(payload, ensure_ascii=False, indent=2)
-    
-    # If recovering from model_error, add error context
-    if error_context:
-        result += "\n\n[ERROR CONTEXT]\nThe previous model had this error during optimization: " + error_context
-        result += "\nPlease review the model structure and make necessary adjustments to fix this error."
-    
-    return result
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 # Node
@@ -88,13 +80,7 @@ def analyser_node(state: GraphState) -> dict:
         return {}
 
     llm = get_llm_client()
-    
-    # If recovering from model_error, pass error context to LLM
-    error_context = None
-    if state.get("last_error_type") == "model_error":
-        error_context = state.get("last_execution_error", "Model optimization failed")
-    
-    user_content = _build_user_message(state, error_context=error_context)
+    user_content = _build_user_message(state)
 
     last_error = None
     output = None
