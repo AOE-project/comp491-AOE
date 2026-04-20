@@ -378,7 +378,7 @@ def _process_message(user_message: str, chat_history: list):
     global _current_state, _attached_file_path
     
     if not user_message.strip() and _attached_file_path is None:
-        return (gr.update(),) * 12
+        return (gr.update(),) * 13
 
     # Get filename for display
     display_content = user_message
@@ -548,6 +548,7 @@ with gr.Blocks(title="AOE — Automated Optimization Engineer", css=custom_css) 
                     variant="primary",
                     elem_classes=["data-submit-btn"],
                 )
+
 
             # Normal chat input row — hidden during param_data collection
             with gr.Row() as msg_row:
