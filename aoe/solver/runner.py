@@ -6,7 +6,7 @@ subprocess, and returns a structured result dict.
 
 The result dict is stored in GraphState["solver_result"] and has the form:
     {
-        "status":     "success" | "runtime_error" | "timeout",
+        "status":     "success" | "failed" | "timeout",
         "stdout":     str,   # everything the script printed
         "stderr":     str,   # error output — used by the retry mechanism
         "returncode": int,   # process exit code (0 = clean exit)
@@ -23,6 +23,13 @@ from core.state import GraphState
 
 _TIMEOUT_SECONDS = 60
 _settings = load_settings()
+
+_INJECTED_ERROR_MESSAGES = {
+    "syntax_error": "SyntaxError: invalid syntax at line 5",
+    "runtime_error": "NameError: name 'x' is not defined",
+    "modeling_error": "GurobiPy error: model.addvars() received invalid argument",
+    "unknown_error": "UnexpectedError: Something went wrong",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -71,48 +78,45 @@ def run_generated_code(code: str) -> dict:
 # ---------------------------------------------------------------------------
 # Node
 # ---------------------------------------------------------------------------
+def _get_injected_test_error_result(state: GraphState) -> dict | None:
+    """Return injected solver output in test mode; otherwise return None."""
+    regeneration_attempts = state.get("regeneration_attempts", 0)
+    should_inject_error = (
+        _settings.test_error_injection
+        and regeneration_attempts == 0  # Only inject on 1st attempt (no regenerations yet)
+    )
+    print(
+        f"[DEBUG] solver_node: regeneration_attempts={regeneration_attempts}, "
+        f"should_inject_error={should_inject_error}, "
+        f"test_error_injection={_settings.test_error_injection}"
+    )
+
+    if not should_inject_error:
+        return None
+
+    error_type = getattr(_settings, "test_error_type", "syntax_error")
+    error_msg = _INJECTED_ERROR_MESSAGES.get(error_type, _INJECTED_ERROR_MESSAGES["syntax_error"])
+    print(f"[INJECTING ERROR] Type: {error_type.upper()}")
+    print(f"[ERROR MESSAGE] {error_msg}")
+
+    return {
+        "solver_result": {
+            "status": "failed",
+            "stdout": "",
+            "stderr": error_msg,
+            "returncode": 1,
+        },
+        "last_execution_error": error_msg,
+    }
 
 def solver_node(state: GraphState) -> dict:
     """
     LangGraph node — runs the generated Gurobi script and stores the result.
-    If execution fails, also sets last_execution_error for debug routing.
-    
-    Error testing via .env:
-      TEST_ERROR_INJECTION=true + TEST_ERROR_TYPE=syntax_error|runtime_error|modeling_error
-    
-    Multi-attempt recovery: Skip error injection on 2nd+ regeneration attempts
-    so the fixed code can actually execute and succeed.
     """
-    # TEST MODE: Inject specific error type for debug flow testing
-    # BUT: Skip injection on regeneration attempts to allow fixed code to run
-    regeneration_attempts = state.get("regeneration_attempts", 0)
-    should_inject_error = (
-        _settings.test_error_injection and 
-        regeneration_attempts == 0  # Only inject on 1st attempt (no regenerations yet)
-    )
-    print(f"[DEBUG] solver_node: regeneration_attempts={regeneration_attempts}, should_inject_error={should_inject_error}, test_error_injection={_settings.test_error_injection}")
     
-    if should_inject_error:
-        error_messages = {
-            "syntax_error": "SyntaxError: invalid syntax at line 5",
-            "runtime_error": "NameError: name 'x' is not defined",
-            "modeling_error": "GurobiPy error: model.addvars() received invalid argument",
-            "unknown_error": "UnexpectedError: Something went wrong",
-        }
-        error_type = getattr(_settings, "test_error_type", "syntax_error")
-        error_msg = error_messages.get(error_type, error_messages["syntax_error"])
-        print(f"[INJECTING ERROR] Type: {error_type.upper()}")
-        print(f"[ERROR MESSAGE] {error_msg}")
-        
-        return {
-            "solver_result": {
-                "status": "failed",
-                "stdout": "",
-                "stderr": error_msg,
-                "returncode": 1,
-            },
-            "last_execution_error": error_msg,
-        }
+    injected_result = _get_injected_test_error_result(state)
+    if injected_result is not None:
+        return injected_result
     
     code = (state.get("generated_code") or "").strip()
     if not code:

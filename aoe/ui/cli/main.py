@@ -13,7 +13,6 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.text import Text
 
 from middleware.handle import AOEHandle
 
@@ -101,6 +100,7 @@ def _run_input_retrieval(handle: AOEHandle, state: dict) -> dict:
                     continue
                 break
 
+            _print_collected(param_name, str(path))
             state = handle.run(str(path), state)
 
             # Check immediately if the node reported a validation error
@@ -109,8 +109,6 @@ def _run_input_retrieval(handle: AOEHandle, state: dict) -> dict:
             if new_error:
                 # Loop will print the error on the next iteration
                 continue
-
-            _print_collected(param_name, str(path))
 
         else:
             # Unknown spec type — skip by sending an empty string
@@ -196,16 +194,11 @@ def run(
         console.print("[bold red]Code generation failed — no script produced.[/bold red]")
         raise typer.Exit(1)
 
-    # ── Solver result with error recovery loop ────────────────────────────
-    max_recovery_attempts = 5
-    recovery_attempt = 0
-    
-    while recovery_attempt < max_recovery_attempts:
-        # Run solver
-        state = handle.run("", state)
-        recovery_attempt += 1
-        
-        solver_result = state.get("solver_result") or {}
+    # ── Solver result ─────────────────────────────────────────────────────
+    # Solver has already run in the same graph invocation that completed
+    # input retrieval (when the last required CSV was provided).
+    solver_result = state.get("solver_result") or {}
+    if solver_result:
         status = solver_result.get("status", "")
         stdout = (solver_result.get("stdout") or "").strip()
         stderr = (solver_result.get("stderr") or "").strip()
@@ -213,28 +206,9 @@ def run(
         if status == "success":
             console.print("\n[bold green]Solver Result:[/bold green]")
             console.print(Panel(stdout, border_style="green", padding=(0, 1)))
-            break  # Success — exit loop
         else:
             console.print(f"\n[bold red]Solver Error ({status}):[/bold red]")
             console.print(Panel(stderr, border_style="red", padding=(0, 1)))
-            
-            # Check error type for recovery routing
-            error_type = state.get("last_error_type")
-            
-            if error_type == "max_retries_exceeded":
-                console.print("\n[bold red]Max recovery attempts exceeded.[/bold red]")
-                break
-            elif error_type in ["syntax_error", "runtime_error", "modeling_error"]:
-                # Code errors — regenerate and retry
-                console.print("\n[bold yellow]Code error detected — regenerating code...[/bold yellow]")
-                error_msg = state.get("last_execution_error", "Code generation failed")
-                console.print(f"[dim]{error_msg}[/dim]\n")
-                state = handle.run("", state)  # Trigger code_generator
-            else:
-                # unknown_error or other — end recovery and show result
-                console.print("\n[bold red]Unknown error — showing final result.[/bold red]")
-                break
-
 
 if __name__ == "__main__":
     app()

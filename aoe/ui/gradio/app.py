@@ -220,22 +220,13 @@ def _build_pipeline_status(state: dict) -> str:
                     # ERROR or SUCCESS path
                     if state.get("last_execution_error"):
                         # DEBUG phase
-                        if state.get("last_error_type"):
+                        if state.get("last_error_type") and state.get("regeneration_attempts", 0) > 0:
                             completed.add(4)
-                            
-                            # Still has error after debug
-                            if state.get("explanation"):
-                                completed.add(5)
-                            else:
-                                active = 5  # Explainer (final)
+                            active = 2  # Code Generator regenerating
+                        elif state.get("last_error_type"):
+                            active = 4  # Debug classified, waiting to route
                         else:
                             active = 4  # Debug classification happening
-                    else:
-                        # Success path - go to explainer
-                        if state.get("explanation"):
-                            completed.add(5)
-                        else:
-                            active = 5  # Explainer running
                 else:
                     active = 3  # Solver running
             else:
@@ -296,11 +287,76 @@ def _build_pipeline_status(state: dict) -> str:
     return html
 
 
+def _build_error_panel(state: dict) -> str:
+    error_type = state.get("last_error_type") or ""
+    if not error_type or error_type == "max_retries_exceeded":
+        return ""
+
+    label_map = {
+        "syntax_error": ("SYNTAX_ERROR", "error-syntax", "var(--error-syntax)"),
+        "runtime_error": ("RUNTIME_ERROR", "error-runtime", "var(--error-runtime)"),
+        "modeling_error": ("MODELING_ERROR", "error-modeling", "var(--error-modeling)"),
+        "unknown_error": ("UNKNOWN_ERROR", "error-unknown", "var(--error-unknown)"),
+    }
+    label, css_class, color = label_map.get(
+        error_type, ("UNKNOWN_ERROR", "error-unknown", "var(--error-unknown)")
+    )
+
+    # Pull causes/hints from the latest debug attempt analysis.
+    debug_attempts = state.get("debug_attempts") or []
+    causes, hints = [], []
+    if debug_attempts:
+        latest_analysis = debug_attempts[-1].get("analysis") or {}
+        causes = latest_analysis.get("causes") or []
+        hints = latest_analysis.get("recovery_hints") or []
+
+    causes_html = "".join(
+        f'<li style="color:var(--aoe-t1); font-size:12px; margin:3px 0;">- {c}</li>'
+        for c in causes[:3]
+    )
+
+    hints_html = "".join(
+        f'<li style="color:var(--aoe-t2); font-size:11px; margin:2px 0;">{h}</li>'
+        for h in hints[:2]
+    )
+
+    is_regenerating = error_type in ["syntax_error", "runtime_error", "modeling_error"]
+    regen_html = ""
+    if is_regenerating:
+        regen_html = """
+        <div style="margin-top:12px; padding:10px 14px;
+                    background:rgba(30,58,47,0.5);
+                    border-left:3px solid var(--aoe-green);
+                    border-radius:6px;">
+            <span style="color:var(--aoe-green); font-size:13px;">
+                🔄 <strong>Regenerating code with the fix applied... Please wait.</strong>
+            </span><br>
+            <span style="color:var(--aoe-t2); font-size:11px;">Code generating again...</span>
+        </div>"""
+
+    return f"""
+    <div class="solver-error-box {css_class}" style="margin:8px 0;">
+        <div style="color:{color}; font-weight:700; font-size:13px; margin-bottom:10px;">
+            ⚠ Error Detected
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+            <span style="color:var(--aoe-t1); font-size:12px;">Error Type:</span>
+            <span style="background:{color}; color:#fff; padding:2px 10px;
+                         border-radius:4px; font-size:11px; font-weight:700;
+                         letter-spacing:0.05em;">{label}</span>
+        </div>
+        {"<div style='margin-bottom:4px;'><span style='color:var(--aoe-t0); font-size:12px; font-weight:600;'>Possible Causes:</span><ul style='margin:6px 0 0 8px; padding:0; list-style:none;'>" + causes_html + "</ul></div>" if causes_html else ""}
+        {"<div style='margin-top:6px;'><span style='color:var(--aoe-t0); font-size:11px; font-weight:600;'>Recovery Hints:</span><ul style='margin:4px 0 0 8px; padding:0; list-style:none;'>" + hints_html + "</ul></div>" if hints_html else ""}
+        {regen_html}
+    </div>"""
+
+
 # ============ SHARED OUTPUT BUILDER ============
-# All callbacks share the same 12-element output tuple:
+# All callbacks share the same 14-element output tuple:
 #   msg_input, chatbot, approve_row, msg_row,
 #   data_panel, data_prompt_md, error_md, param_file,
-#   model_display, confirmed_display, unconfirmed_display, pipeline_status
+#   model_display, confirmed_display, unconfirmed_display, pipeline_status,
+#   error_panel
 
 def _build_all_outputs(state: dict, chat_history: list, clear_msg: bool = False):
     spec      = (state or {}).get("current_input_spec") or {}
@@ -340,6 +396,7 @@ def _build_all_outputs(state: dict, chat_history: list, clear_msg: bool = False)
 
     model_info, conf, unconf = _format_sidebar(state)
     pipeline_html = _build_pipeline_status(state)
+    error_panel_html = _build_error_panel(state)
 
     # During tabular data collection, disable message input
     msg_input_upd = gr.update(value="", interactive=False) if (clear_msg and is_tabular) else (
@@ -360,6 +417,7 @@ def _build_all_outputs(state: dict, chat_history: list, clear_msg: bool = False)
         conf,                                # confirmed_display
         unconf,                              # unconfirmed_display
         pipeline_html,                       # pipeline_status
+        error_panel_html,                    # error_panel
     )
 
 
@@ -378,7 +436,7 @@ def _process_message(user_message: str, chat_history: list):
     global _current_state, _attached_file_path
     
     if not user_message.strip() and _attached_file_path is None:
-        return (gr.update(),) * 13
+        return (gr.update(),) * 14
 
     # Get filename for display
     display_content = user_message
@@ -407,14 +465,14 @@ def _process_message(user_message: str, chat_history: list):
     except Exception as e:
         chat_history.append({"role": "assistant", "content": f"**Error:** {str(e)}"})
         _attached_file_path = None
-        return ("", chat_history) + (gr.update(),) * 11
+        return ("", chat_history) + (gr.update(),) * 12
 
 
 def _approve(chat_history: list):
     """User clicked Approve — set analyser_approved and advance graph."""
     global _current_state
     if _current_state is None:
-        return (gr.update(),) * 13
+        return (gr.update(),) * 14
 
     _current_state["analyser_approved"] = True
     _current_state = _aoe_handle.run("__approved__", _current_state)
@@ -438,6 +496,7 @@ def _request_changes(chat_history: list):
         gr.update(),                # confirmed_display
         gr.update(),                # unconfirmed_display
         gr.update(),                # pipeline_status
+        gr.update(value=""),       # error_panel
     )
 
 
@@ -464,7 +523,7 @@ def _submit_param_data(file, df_data, chat_history: list):
         return _build_all_outputs(_current_state, chat_history)
     except Exception as e:
         chat_history.append({"role": "assistant", "content": f"**Error:** {str(e)}"})
-        return (gr.update(),) * 13
+        return (gr.update(),) * 14
 
 
 def _reset_session():
@@ -488,6 +547,7 @@ def _reset_session():
         "*No assumptions confirmed yet.*",      # confirmed_display
         "*No assumptions to review yet.*",      # unconfirmed_display
         _build_pipeline_status({}),  # pipeline_status - consistent with initial state
+        gr.update(value=""),        # error_panel
     )
 
 
@@ -526,6 +586,8 @@ with gr.Blocks(title="AOE — Automated Optimization Engineer", css=custom_css) 
                 gr.Markdown("**Does this model look correct?**", elem_classes=["approve-label"])
                 approve_btn = gr.Button("✔ Approve",         elem_classes=["approve-btn"], scale=1)
                 changes_btn = gr.Button("✎ Request Changes", elem_classes=["changes-btn"], scale=1)
+
+            error_panel = gr.HTML(value="")
 
             # Data collection panel — shown during param_data collection turns
             with gr.Group(visible=False, elem_classes=["data-panel"]) as data_panel:
@@ -589,10 +651,11 @@ with gr.Blocks(title="AOE — Automated Optimization Engineer", css=custom_css) 
 
             reset_btn = gr.Button("New Session", variant="secondary")
 
-    # ── All callbacks share the same 13-element output list ──────────────
+    # ── All callbacks share the same 14-element output list ──────────────
     # msg_input, chatbot, approve_row, msg_row,
     # data_panel, data_prompt_md, data_error_md, param_file, param_df,
-    # model_display, confirmed_display, unconfirmed_display, pipeline_status
+    # model_display, confirmed_display, unconfirmed_display, pipeline_status,
+    # error_panel
     ALL_OUTPUTS = [
         msg_input,
         chatbot,
@@ -607,6 +670,7 @@ with gr.Blocks(title="AOE — Automated Optimization Engineer", css=custom_css) 
         confirmed_display,
         unconfirmed_display,
         pipeline_status,
+        error_panel,
     ]
 
     send_btn.click(

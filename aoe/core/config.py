@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     log_output_dir: str = "./logs"
     use_dummy_analyser: bool = False
     use_dummy_code_generator: bool = False
-    use_dummy_regeneration: bool = False
+
 
     # Error testing (debug flow validation)
     test_error_injection: bool = False
