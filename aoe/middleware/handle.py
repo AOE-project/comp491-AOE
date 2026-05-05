@@ -41,6 +41,7 @@ class AOEHandle:
                 "input_retrieval_cursor": 0,
                 "current_input_spec": {},
                 "generated_code": "",
+                "code_syntax_error": None,
                 "solver_result": {},
                 "explanation": "",
                 "token_usage": {},

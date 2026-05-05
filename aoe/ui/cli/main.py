@@ -183,7 +183,32 @@ def run(
     if (state or {}).get("current_input_spec"):
         state = _run_input_retrieval(handle, state)
 
-    console.print("[bold]Model approved and data collected. Code generation coming soon.[/bold]")
+    # ── Code generation result ────────────────────────────────────────────
+    generated_code = (state.get("generated_code") or "").strip()
+    if generated_code:
+        console.print("[bold cyan]Generated Gurobi Script:[/bold cyan]")
+        console.print(Panel(generated_code, border_style="dim", padding=(0, 1)))
+
+        syntax_error = state.get("code_syntax_error")
+        if syntax_error:
+            console.print(f"\n[bold red]Syntax error:[/bold red] {syntax_error}")
+    else:
+        console.print("[bold red]Code generation failed — no script produced.[/bold red]")
+        raise typer.Exit(1)
+
+    # ── Solver result ─────────────────────────────────────────────────────
+    solver_result = state.get("solver_result") or {}
+    if solver_result:
+        status = solver_result.get("status", "")
+        stdout = (solver_result.get("stdout") or "").strip()
+        stderr = (solver_result.get("stderr") or "").strip()
+
+        if status == "success":
+            console.print("\n[bold green]Solver Result:[/bold green]")
+            console.print(Panel(stdout, border_style="green", padding=(0, 1)))
+        else:
+            console.print(f"\n[bold red]Solver Error ({status}):[/bold red]")
+            console.print(Panel(stderr, border_style="red", padding=(0, 1)))
 
 
 if __name__ == "__main__":

@@ -31,6 +31,7 @@ class GraphState(TypedDict):
 
     # Code generation
     generated_code: str             # output of CodeGenerator
+    code_syntax_error: str | None   # syntax error message from CodeGenerator, None if valid
 
     # Solver
     solver_result: dict             # output of SolverRunner
