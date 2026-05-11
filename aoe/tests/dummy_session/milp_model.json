@@ -1,0 +1,25 @@
+{
+  "sets": [
+    {"name": "I", "description": "Warehouses"},
+    {"name": "J", "description": "Stores"}
+  ],
+  "tuples": [
+    {"name": "IJ", "description": "Warehouse-store pairs", "component_sets": ["I", "J"]}
+  ],
+  "parameters": [
+    {"name": "c", "description": "Shipping cost",       "index_sets": ["I", "J"], "shape": ["I", "J"], "data_key": "cost"},
+    {"name": "s", "description": "Supply at warehouse", "index_sets": ["I"],      "shape": ["I"],      "data_key": "supply"},
+    {"name": "d", "description": "Demand at store",     "index_sets": ["J"],      "shape": ["J"],      "data_key": "demand"}
+  ],
+  "variables": [
+    {"name": "x", "description": "Units shipped", "type": "continuous", "index_sets": ["I", "J"], "lb": 0, "ub": null}
+  ],
+  "objective": {
+    "sense": "minimize",
+    "expression": "sum_{i in I} sum_{j in J} c[i][j] * x[i][j]"
+  },
+  "constraints": [
+    {"name": "supply", "description": "Supply limit",      "expression": "sum_{j in J} x[i][j] <= s[i]  for all i in I", "index_sets": ["I"]},
+    {"name": "demand", "description": "Demand fulfilment", "expression": "sum_{i in I} x[i][j] >= d[j]  for all j in J", "index_sets": ["J"]}
+  ]
+}

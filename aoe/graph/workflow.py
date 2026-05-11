@@ -5,20 +5,28 @@ Nodes, conditional routing, and the compiled graph.
 Entry point is always AOEHandle (middleware/handle.py), never called directly.
 
 Routing logic:
-  analyser → if open_questions is empty AND analyser_approved → code_generator
+  analyser → if open_questions is empty AND analyser_approved → latex_generator
            → if open_questions is empty AND not approved      → END (await user approval)
            → if open_questions not empty                      → END (await user answers)
+  latex_generator → input_retrieval (always; pass-through if latex_model already set)
 """
+
+import json
+import shutil
+from pathlib import Path
 
 from langgraph.graph import StateGraph, END
 
 from agents.analyser import analyser_node
 from agents.code_generator import code_generator_node
 from agents.input_retrieval import input_retrieval_node
+from agents.latex_generator import latex_generator_node
 from core.config import load_settings
 from core.state import GraphState
 from solver.runner import solver_node
 
+
+_DUMMY_SESSION = Path(__file__).parent.parent / "tests" / "dummy_session"
 
 # Dummy analyser node — no LLM calls, no token usage.
 # Activate by setting USE_DUMMY_ANALYSER=true in your .env file.
@@ -26,33 +34,15 @@ from solver.runner import solver_node
 def dummy_analyser_node(state: GraphState) -> dict:
     """
     Replacement for analyser_node for UI development.
-    Returns a hardcoded minimal MILP model after two fake turns so the
-    Gradio/CLI developer can exercise the full conversation flow without
-    spending OpenAI tokens.
-
-    Turn 1: returns open questions.
-    Turn 2+: clears questions and marks the model ready for approval.
+    Loads the MILP model from tests/dummy_session/milp_model.json and returns
+    a two-turn fake conversation (questions on turn 1, approval-ready on turn 2+)
+    so the full Gradio flow can be exercised without spending OpenAI tokens.
     """
     if state.get("analyser_approved"):
         return {}
 
     turn = state.get("iteration_count", 0)
-
-    base_model = {
-        "sets": [{"name": "I", "description": "Warehouses"}, {"name": "J", "description": "Stores"}],
-        "tuples": [{"name": "IJ", "description": "Warehouse-store pairs", "component_sets": ["I", "J"]}],
-        "parameters": [
-            {"name": "c", "description": "Shipping cost", "index_sets": ["I", "J"], "shape": ["I", "J"], "data_key": "cost"},
-            {"name": "s", "description": "Supply at warehouse", "index_sets": ["I"], "shape": ["I"], "data_key": "supply"},
-            {"name": "d", "description": "Demand at store", "index_sets": ["J"], "shape": ["J"], "data_key": "demand"},
-        ],
-        "variables": [{"name": "x", "description": "Units shipped", "type": "continuous", "index_sets": ["I", "J"], "lb": 0, "ub": None}],
-        "objective": {"sense": "minimize", "expression": "sum_{i in I} sum_{j in J} c[i][j] * x[i][j]"},
-        "constraints": [
-            {"name": "supply", "description": "Supply limit", "expression": "sum_{j in J} x[i][j] <= s[i]  for all i in I", "index_sets": ["I"]},
-            {"name": "demand", "description": "Demand fulfilment", "expression": "sum_{i in I} x[i][j] >= d[j]  for all j in J", "index_sets": ["J"]},
-        ],
-    }
+    base_model = json.loads((_DUMMY_SESSION / "milp_model.json").read_text(encoding="utf-8"))
 
     if turn == 0:
         return {
@@ -94,27 +84,41 @@ _settings = load_settings()
 _analyser = dummy_analyser_node if _settings.use_dummy_analyser else analyser_node
 
 
+def dummy_latex_generator_node(state: GraphState) -> dict:
+    """
+    Replacement for latex_generator_node for UI development.
+    Loads the LaTeX body from tests/dummy_session/latex_body.tex and copies
+    the sample PNG into the actual session folder (mirrors what the real node
+    does so SessionLogger finds it in the right place).
+    Activate with USE_DUMMY_LATEX_GENERATOR=true in your .env file.
+    """
+    if state.get("latex_model"):
+        return {}
+
+    latex_body  = (_DUMMY_SESSION / "latex_body.tex").read_text(encoding="utf-8")
+    session_dir = Path(__file__).parent.parent / "sessions" / state.get("session_id", "dummy")
+    session_dir.mkdir(parents=True, exist_ok=True)
+    png_dest    = session_dir / "milp_formulation.png"
+    shutil.copy2(_DUMMY_SESSION / "milp_formulation.png", png_dest)
+    return {"latex_model": latex_body, "latex_png_path": str(png_dest)}
+
+
+_latex_generator = (
+    dummy_latex_generator_node
+    if _settings.use_dummy_latex_generator
+    else latex_generator_node
+)
+
+
 def dummy_code_generator_node(state: GraphState) -> dict:
     """
     Replacement for code_generator_node for UI / integration development.
-    Returns a minimal but syntactically valid gurobipy stub so the rest of
-    the pipeline can be exercised without spending tokens.
+    Loads actual runnable gurobipy code from tests/dummy_session/generated_code.py
+    so the solver can execute it and produce real output.
     Activate with USE_DUMMY_CODE_GENERATOR=true in your .env file.
     """
-    raw_data = state.get("raw_data", {})
-    return {
-        "generated_code": (
-            "# [DUMMY] Code generation skipped — USE_DUMMY_CODE_GENERATOR=true\n"
-            "import gurobipy as gp\n"
-            "from gurobipy import GRB\n\n"
-            f"# raw_data keys available: {list(raw_data.keys())}\n\n"
-            "m = gp.Model('dummy')\n"
-            "m.Params.OutputFlag = 0\n"
-            "m.optimize()\n"
-            "result = {'status': 'dummy', 'objective_value': None, 'variables': {}}\n"
-            "print(result)\n"
-        )
-    }
+    code = (_DUMMY_SESSION / "generated_code.py").read_text(encoding="utf-8")
+    return {"generated_code": code}
 
 
 _code_generator = (
@@ -135,12 +139,12 @@ def explainer_node(state: GraphState) -> dict:
 
 def _route_after_analyser(state: GraphState) -> str:
     """
-    Advance to input_retrieval only when the user has explicitly approved the model.
+    Advance to latex_generator only when the user has explicitly approved the model.
     Otherwise return END so AOEHandle can surface questions or the summary to the user
     and wait for the next message.
     """
     if state.get("analyser_approved"):
-        return "input_retrieval"
+        return "latex_generator"
     return END
 
 
@@ -163,6 +167,7 @@ def _route_after_input_retrieval(state: GraphState) -> str:
 _builder = StateGraph(GraphState)
 
 _builder.add_node("analyser", _analyser)
+_builder.add_node("latex_generator", _latex_generator)
 _builder.add_node("input_retrieval", input_retrieval_node)
 _builder.add_node("code_generator", _code_generator)
 _builder.add_node("solver", solver_node)
@@ -170,6 +175,7 @@ _builder.add_node("explainer", explainer_node)
 
 _builder.set_entry_point("analyser")
 _builder.add_conditional_edges("analyser", _route_after_analyser)
+_builder.add_edge("latex_generator", "input_retrieval")
 _builder.add_conditional_edges("input_retrieval", _route_after_input_retrieval)
 _builder.add_edge("code_generator", "solver")
 _builder.add_edge("solver", "explainer")

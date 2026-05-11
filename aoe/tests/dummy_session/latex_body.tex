@@ -1,0 +1,27 @@
+\section*{Transportation Problem}
+\subsection*{Sets}
+\begin{itemize}
+  \item $I$ --- Warehouses
+  \item $J$ --- Stores
+\end{itemize}
+
+\subsection*{Parameters}
+\begin{itemize}
+  \item $c_{ij}$ --- shipping cost from warehouse $i$ to store $j$
+  \item $s_i$ --- supply at warehouse $i$
+  \item $d_j$ --- demand at store $j$
+\end{itemize}
+
+\subsection*{Decision Variables}
+$x_{ij} \geq 0$ --- units shipped from warehouse $i$ to store $j$
+
+\subsection*{Objective}
+\begin{equation*}
+  \min \sum_{i \in I} \sum_{j \in J} c_{ij}\, x_{ij}
+\end{equation*}
+
+\subsection*{Constraints}
+\begin{align*}
+  \sum_{j \in J} x_{ij} &\leq s_i \quad \forall i \in I \quad \text{(supply)}\\
+  \sum_{i \in I} x_{ij} &\geq d_j \quad \forall j \in J \quad \text{(demand)}
+\end{align*}

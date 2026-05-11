@@ -27,6 +27,40 @@ _SYSTEM_PROMPT = (_PROMPTS_DIR / "code_generator_prompt.txt").read_text(encoding
 
 _MAX_RETRIES = 3
 
+# Fixed Python block appended after the LLM model code. It reads m.status,
+# m.objVal, and m.getVars() to write result.json (read by the UI) and
+# iis.ilp (on infeasibility) into CWD — which the solver runner sets to
+# sessions/<session_id>/.  Keeping this out of the prompt lets the LLM
+# focus on modelling instead of result plumbing.
+_RESULT_EPILOGUE = '''
+# --- Result Section (auto-generated) ---
+import json as _aoe_json
+import pathlib as _aoe_pathlib
+
+if m.status == GRB.OPTIMAL:
+    _aoe_result = {
+        "status": "optimal",
+        "objective_value": float(m.objVal),
+        "variables": {
+            v.VarName: float(v.X)
+            for v in m.getVars()
+            if abs(v.X) > 1e-6
+        },
+    }
+elif m.status == GRB.INFEASIBLE:
+    m.computeIIS()
+    m.write("iis.ilp")
+    _aoe_result = {"status": "infeasible", "objective_value": None, "variables": {}}
+elif m.status == GRB.UNBOUNDED:
+    _aoe_result = {"status": "unbounded", "objective_value": None, "variables": {}}
+else:
+    _aoe_result = {"status": f"other:{m.status}", "objective_value": None, "variables": {}}
+
+# pathlib avoids calling the built-in open(), which a Gurobi variable named
+# "open" (e.g. for facility-location problems) would shadow.
+_aoe_pathlib.Path("result.json").write_text(_aoe_json.dumps(_aoe_result))
+'''
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -127,7 +161,7 @@ def code_generator_node(state: GraphState) -> dict:
         if not model_code:
             continue
 
-        full_code    = data_section + "\n" + model_code
+        full_code    = data_section + "\n" + model_code + "\n" + _RESULT_EPILOGUE
         syntax_error = _check_syntax(full_code)
 
         if syntax_error is None:

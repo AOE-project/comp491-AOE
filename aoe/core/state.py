@@ -11,6 +11,7 @@ class GraphState(TypedDict):
     session_id: str
     problem_description: str        # initial natural language user message
     history: list                   # full conversation history (role, content pairs)
+    chat_history: list              # Gradio chatbot transcript (rendered messages, written by UI)
 
     # Analyser
     iteration_count: int            # number of analyser turns so far (max 10)
@@ -35,6 +36,10 @@ class GraphState(TypedDict):
 
     # Solver
     solver_result: dict             # output of SolverRunner
+
+    # LaTeX formulation
+    latex_model: str                # LaTeX body source; populated by LaTeXGeneratorAgent
+    latex_png_path: str             # absolute path to the compiled PNG; populated by LaTeXGeneratorAgent
 
     # Explanation
     explanation: str                # output of Explainer

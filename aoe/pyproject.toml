@@ -14,12 +14,14 @@ dependencies = [
     "openai",
     "gurobipy>=12.0,<13.0",
     "pydantic",
-    "gradio",
+    "gradio==6.10.0",
     "typer",
     "rich",
     "python-dotenv",
     "pydantic-settings",
     "jsonschema",
+    "attrs>=22.0",
+    "pymupdf",
 ]
 
 [tool.setuptools.packages.find]

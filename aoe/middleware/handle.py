@@ -21,12 +21,14 @@ class AOEHandle:
         self._logger: SessionLogger | None = None
 
     def run(self, user_message: str, state: GraphState | None = None) -> GraphState:
-        if state is None:
+        is_new = state is None
+        if is_new:
             session_id = str(uuid.uuid4())
             state: GraphState = {
                 "session_id": session_id,
                 "problem_description": user_message,
                 "history": [{"role": "user", "content": user_message}],
+                "chat_history": [],
                 "iteration_count": 0,
                 "analyser_output": None,
                 "milp_model": {},
@@ -54,6 +56,15 @@ class AOEHandle:
         state = compiled_graph.invoke(state)
         self._logger.checkpoint(state)
         return state
+
+    def save(self, state: GraphState) -> None:
+        """Persist the current state to disk without running the graph.
+
+        Used by the UI after it finalises chat_history (which can only be
+        completed once the assistant turn has been rendered).
+        """
+        if self._logger is not None:
+            self._logger.checkpoint(state)
 
     @classmethod
     def resume(
