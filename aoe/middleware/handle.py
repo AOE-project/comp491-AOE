@@ -9,9 +9,10 @@ run() again with the updated state.
 import uuid
 from pathlib import Path
 
+from agents.chat_agent import chat_agent_node
 from core.state import GraphState
 from core.logger import SessionLogger
-from graph.workflow import compiled_graph
+from graph.workflow import compiled_graph, re_optimization_graph
 
 
 class AOEHandle:
@@ -46,6 +47,11 @@ class AOEHandle:
                 "code_syntax_error": None,
                 "solver_result": {},
                 "explanation": "",
+                "chat_mode": False,
+                "chat_history": [],
+                "chat_response": "",
+                "chat_pending_modification": None,
+                "chat_modification_approved": False,
                 "token_usage": {},
             }
             self._logger = SessionLogger(session_id, self._sessions_root)
@@ -53,7 +59,21 @@ class AOEHandle:
         else:
             state["history"].append({"role": "user", "content": user_message})
 
-        state = compiled_graph.invoke(state)
+        if state.get("chat_mode"):
+            # Solver has already run — send the message directly to the chat agent.
+            updates = chat_agent_node(state)
+            state = {**state, **updates}
+            # The chat agent updated milp_model — regenerate code and re-solve.
+            if state.get("chat_modification_approved"):
+                state = re_optimization_graph.invoke(state)
+                state["chat_modification_approved"] = False
+                state["chat_response"] = ""  # clear so UI shows the new solver result
+        else:
+            state = compiled_graph.invoke(state)
+            # Switch to chat mode once the solver result is available.
+            if state.get("solver_result"):
+                state["chat_mode"] = True
+
         self._logger.checkpoint(state)
         return state
 
