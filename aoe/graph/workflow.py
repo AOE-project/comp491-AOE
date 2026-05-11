@@ -176,3 +176,21 @@ _builder.add_edge("solver", "explainer")
 _builder.add_edge("explainer", END)
 
 compiled_graph = _builder.compile()
+
+
+# Re-optimisation graph — used by AOEHandle when the chat agent approves a
+# model modification. Skips analyser and input_retrieval (data already in state)
+# and regenerates code, re-solves, and re-explains with the updated milp_model.
+
+_re_opt_builder = StateGraph(GraphState)
+
+_re_opt_builder.add_node("code_generator", _code_generator)
+_re_opt_builder.add_node("solver", solver_node)
+_re_opt_builder.add_node("explainer", explainer_node)
+
+_re_opt_builder.set_entry_point("code_generator")
+_re_opt_builder.add_edge("code_generator", "solver")
+_re_opt_builder.add_edge("solver", "explainer")
+_re_opt_builder.add_edge("explainer", END)
+
+re_optimization_graph = _re_opt_builder.compile()

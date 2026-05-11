@@ -39,5 +39,12 @@ class GraphState(TypedDict):
     # Explanation
     explanation: str                # output of Explainer
 
+    # Chat Agent (post-solver interactive Q&A)
+    chat_mode: bool                 # True once the solver has run and chat is active
+    chat_history: list              # chat-specific turns: [{"role": ..., "content": ...}, ...]
+    chat_response: str              # last response text from the chat agent
+    chat_pending_modification: dict # proposed model change awaiting user approval
+    chat_modification_approved: bool  # True when user approves a pending modification
+
     # Token tracking
     token_usage: dict

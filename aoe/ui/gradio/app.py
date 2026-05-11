@@ -27,6 +27,10 @@ _current_state: Optional[dict] = None
 # ============ CORE HELPERS ============
 
 def _build_bot_text(state: dict) -> str:
+    # Chat mode: show the chat agent's response directly.
+    if (state or {}).get("chat_mode") and (state or {}).get("chat_response"):
+        return state["chat_response"]
+
     spec      = (state or {}).get("current_input_spec") or {}
     spec_type = spec.get("type", "")
 
