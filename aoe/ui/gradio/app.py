@@ -7,6 +7,7 @@ Runs everything in a single process.
 Run with:
     python -m ui.gradio.app
 """
+import csv
 import html
 import io
 import sys
@@ -650,10 +651,16 @@ def _submit_param_data(file, df_value, chat_history: list):
         else:
             answer = str(file)
     elif df_value is not None:
-        # Convert edited DataFrame to CSV string
-        csv_buffer = io.StringIO()
-        df_value.to_csv(csv_buffer)
-        answer = csv_buffer.getvalue()
+        if isinstance(df_value, pd.DataFrame):
+            answer = df_value.to_csv(index=False, header=True)
+        elif isinstance(df_value, list):
+            buf = io.StringIO()
+            writer = csv.writer(buf)
+            for row in df_value:
+                writer.writerow(row)
+            answer = buf.getvalue()
+        else:
+            answer = str(df_value)
     else:
         err_spec = {**spec, "error": "Please upload a CSV file or edit the table."}
         _current_state = {**(_current_state or {}), "current_input_spec": err_spec}
