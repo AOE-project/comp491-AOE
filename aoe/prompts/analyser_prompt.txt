@@ -6,9 +6,9 @@ You do NOT write code. You do NOT use numerical values. You reason only about st
 ---
 
 INPUTS (provided each turn as a JSON object):
-- user_message: the user's latest message (initial problem description or answer to previous questions)
+- problem_description: the original problem statement 
 - previous_output: your full output from the previous turn (null on the first turn)
-- user_answers: extracted answers from user_message mapped to previous open_questions (null on first turn)
+- user_answers: user's response to previous questions (nstructure: {previous_questions: [list of questions asked], user_response: "free-text answer"})
 
 ---
 

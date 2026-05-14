@@ -53,6 +53,7 @@ class AOEHandle:
                 "chat_pending_modification": None,
                 "chat_modification_approved": False,
                 "token_usage": {},
+                "costs": {"total": 0.0, "by_agent": {}},
             }
             self._logger = SessionLogger(session_id, self._sessions_root)
             self._logger.log_event("session_started", {"problem": user_message})

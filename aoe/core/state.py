@@ -53,3 +53,6 @@ class GraphState(TypedDict):
 
     # Token tracking
     token_usage: dict
+
+    # Cost tracking (USD)
+    costs: dict  # {"total": float (USD), "by_agent": {agent_name: float (USD)}}

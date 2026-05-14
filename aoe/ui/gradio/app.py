@@ -13,6 +13,7 @@ import io
 import sys
 from pathlib import Path
 from typing import Optional
+from datetime import datetime, timezone, timedelta
 
 import gradio as gr
 import pandas as pd
@@ -347,7 +348,20 @@ def _load_session_list():
     for s in sessions:
         raw_title = s.get("title") or s.get("problem_description", "Untitled")
         title = raw_title[:38] + "…" if len(raw_title) > 38 else raw_title
-        date_str = (s.get("last_updated") or "")[:16].replace("T", " ")
+
+        # Convert UTC timestamp to local time (UTC+3)
+        iso_str = (s.get("last_updated") or "")
+        if iso_str:
+            try:
+                utc_dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+                local_tz = timezone(timedelta(hours=3))
+                local_dt = utc_dt.astimezone(local_tz)
+                date_str = local_dt.strftime("%Y-%m-%d %H:%M")
+            except (ValueError, AttributeError):
+                date_str = iso_str[:16].replace("T", " ")
+        else:
+            date_str = ""
+
         label = f"{title}\n{date_str}" if date_str else title
         choices.append((label, s["session_id"]))
     active = (_current_state or {}).get("session_id")

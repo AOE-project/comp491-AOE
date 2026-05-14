@@ -19,6 +19,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from core.config import get_llm_client
 from core.state import GraphState
+from core.cost_calculator import CostCalculator
 
 # Paths
 
@@ -55,12 +56,23 @@ def _validate(output: dict) -> None:
 
 def _build_user_message(state: GraphState) -> str:
     """Construct the user-turn content sent to the LLM."""
+    problem_description = state.get("problem_description", "")
+    previous_output = state.get("analyser_output")
+    user_msg = state.get("history", [{}])[-1].get("content", "") if state.get("history") else ""
+
+    user_answers = None
+    if previous_output:
+        previous_questions = previous_output.get("open_questions", [])
+        if previous_questions:
+            user_answers = {
+                "previous_questions": previous_questions,
+                "user_response": user_msg,
+            }
+
     payload = {
-        "user_message": state.get("history", [{}])[-1].get("content", "")
-        if state.get("history")
-        else state.get("problem_description", ""),
-        "previous_output": state.get("analyser_output"),
-        "user_answers": None,
+        "problem_description": problem_description,
+        "previous_output": previous_output,
+        "user_answers": user_answers,
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
@@ -100,6 +112,16 @@ def analyser_node(state: GraphState) -> dict:
             raw = response.content
             output = _extract_json(raw)
             _validate(output)
+
+            # Track token usage and costs
+            usage = response.response_metadata.get("token_usage", {})
+            if usage:
+                CostCalculator.update_state_costs(
+                    state=state,
+                    agent_name="analyser",
+                    input_tokens=usage.get("prompt_tokens", 0),
+                    output_tokens=usage.get("completion_tokens", 0),
+                )
             break
         except (ValueError, json.JSONDecodeError, jsonschema.ValidationError) as exc:
             last_error = exc
@@ -125,4 +147,5 @@ def analyser_node(state: GraphState) -> dict:
         "technical_summary": output.get("technical_summary", ""),
         "iteration_count": state.get("iteration_count", 0) + 1,
         "analyser_approved": False,
+        "costs": state.get("costs", {"total": 0.0, "by_agent": {}}),
     }

@@ -20,6 +20,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from core.config import get_llm_client
 from core.state import GraphState
+from core.cost_calculator import CostCalculator
 
 _PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 _SYSTEM_PROMPT = (_PROMPTS_DIR / "chat_agent_prompt.txt").read_text(encoding="utf-8")
@@ -76,6 +77,18 @@ def chat_agent_node(state: GraphState) -> dict:
                 SystemMessage(content=_SYSTEM_PROMPT),
                 HumanMessage(content=user_content),
             ])
+            
+            # Track token usage and costs
+            usage = response.response_metadata.get("token_usage", {})
+
+            if usage:
+                CostCalculator.update_state_costs(
+                    state=state,
+                    agent_name="chat_agent",
+                    input_tokens=usage.get("prompt_tokens", 0),
+                    output_tokens=usage.get("completion_tokens", 0),
+                )
+
             output = _extract_json(response.content)
             if "intent" not in output or "response" not in output:
                 raise ValueError("Missing required fields.")
@@ -88,6 +101,7 @@ def chat_agent_node(state: GraphState) -> dict:
                         "I had trouble processing your request. "
                         f"Please try again. ({last_error})"
                     ),
+                    "costs": state.get("costs", {"total": 0.0, "by_agent": {}}),
                 }
 
     intent = output.get("intent", "explain")
@@ -106,6 +120,7 @@ def chat_agent_node(state: GraphState) -> dict:
         "chat_response": response_text,
         "chat_history": new_chat_history,
         "chat_modification_approved": False,
+        "costs": state.get("costs", {"total": 0.0, "by_agent": {}}),
     }
 
     if intent == "propose_modification" and updated_model:

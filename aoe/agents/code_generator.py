@@ -21,6 +21,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from core.config import get_llm_client
 from core.state import GraphState
+from core.cost_calculator import CostCalculator
 
 _PROMPTS_DIR   = Path(__file__).parent.parent / "prompts"
 _SYSTEM_PROMPT = (_PROMPTS_DIR / "code_generator_prompt.txt").read_text(encoding="utf-8")
@@ -157,6 +158,17 @@ def code_generator_node(state: GraphState) -> dict:
             SystemMessage(content=_SYSTEM_PROMPT),
             HumanMessage(content=user_content),
         ])
+
+        # Track token usage and costs
+        usage = response.response_metadata.get("token_usage", {})
+        if usage:
+            CostCalculator.update_state_costs(
+                state=state,
+                agent_name="code_generator",
+                input_tokens=usage.get("prompt_tokens", 0),
+                output_tokens=usage.get("completion_tokens", 0),
+            )
+
         model_code = _extract_code(response.content)
         if not model_code:
             continue
@@ -173,4 +185,5 @@ def code_generator_node(state: GraphState) -> dict:
     return {
         "generated_code": last_code,
         "code_syntax_error": syntax_error,
+        "costs": state.get("costs", {"total": 0.0, "by_agent": {}}),
     }

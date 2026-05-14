@@ -152,7 +152,7 @@ def _param_data_prompt(task: dict, row_labels: list[str], col_labels: list[str] 
         return (
             f"Provide values for **{pname}** ({desc}).\n"
             f"Shape: [{' × '.join(shape)}]  —  {len(row_labels)} value(s).\n"
-            f"Upload a CSV file or, in the CLI, enter the file path."
+            f"Upload a CSV file"
         )
     else:
         # 2-D
@@ -161,7 +161,6 @@ def _param_data_prompt(task: dict, row_labels: list[str], col_labels: list[str] 
             f"Shape: [{' × '.join(shape)}]  —  "
             f"{len(row_labels)} row(s) × {len(col_labels)} column(s).\n"
             f"Upload a CSV file (rows = {shape[0]}, columns = {shape[1]}) "
-            f"or, in the CLI, enter the file path."
         )
 
 

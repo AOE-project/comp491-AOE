@@ -25,6 +25,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from core.config import get_llm_client
 from core.state import GraphState
+from core.cost_calculator import CostCalculator
 
 
 _PROMPTS_DIR  = Path(__file__).parent.parent / "prompts"
@@ -150,12 +151,27 @@ def latex_generator_node(state: GraphState) -> dict:
                 SystemMessage(content=_SYSTEM_PROMPT),
                 HumanMessage(content=user_content),
             ])
+
+            # Track token usage and costs
+            usage = response.response_metadata.get("token_usage", {})
+            if usage:
+                CostCalculator.update_state_costs(
+                    state=state,
+                    agent_name="latex_generator",
+                    input_tokens=usage.get("prompt_tokens", 0),
+                    output_tokens=usage.get("completion_tokens", 0),
+                )
+
             latex_body = response.content.strip()
             if not latex_body:
                 raise ValueError("LLM returned an empty response.")
 
             png_path = _compile_to_png(latex_body, session_id)
-            return {"latex_model": latex_body, "latex_png_path": png_path}
+            return {
+                "latex_model": latex_body,
+                "latex_png_path": png_path,
+                "costs": state.get("costs", {"total": 0.0, "by_agent": {}}),
+            }
 
         except (ValueError, AttributeError, RuntimeError) as exc:
             last_error = exc
@@ -163,4 +179,5 @@ def latex_generator_node(state: GraphState) -> dict:
     return {
         "latex_model": f"% generation failed: {last_error}",
         "latex_png_path": "",
+        "costs": state.get("costs", {"total": 0.0, "by_agent": {}}),
     }
