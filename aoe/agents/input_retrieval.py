@@ -126,11 +126,12 @@ def _get_elements(state: GraphState, set_name: str) -> list[str]:
 
 # Spec builder helpers
 
-def _set_size_prompt(task: dict) -> str:
+def _set_size_prompt(task: dict, current_count: int | None = None) -> str:
     sn = task["set_name"]
     desc = task["description"]
+    hint = f" (currently {current_count} — update if you are adding or removing elements)" if current_count else ""
     return (
-        f"How many {desc} ({sn}) are there? "
+        f"How many {desc}{hint} ({sn}) are there? "
         f"Enter a count (e.g. 3) or list element names comma-separated "
         f"(e.g. {sn}1, {sn}2, {sn}3)."
     )
@@ -167,11 +168,18 @@ def _param_data_prompt(task: dict, row_labels: list[str], col_labels: list[str] 
 
 def _make_spec(task: dict, state: GraphState, error: str | None = None) -> dict:
     if task["type"] == "set_size":
+        # Show current count as a hint when elements are already known.
+        existing_elements = next(
+            (s.get("elements") for s in state.get("milp_model", {}).get("sets", [])
+             if s["name"] == task["set_name"]),
+            None,
+        )
+        current_count = len(existing_elements) if existing_elements else None
         return {
             "type": "set_size",
             "set_name": task["set_name"],
             "description": task["description"],
-            "prompt": _set_size_prompt(task),
+            "prompt": _set_size_prompt(task, current_count=current_count),
             "error": error,
         }
 
@@ -327,6 +335,84 @@ def _parse_param_answer(
         return result, None
 
 
+# Re-generation helpers
+
+def _restore_set_elements(milp_model: dict, raw_data: dict) -> dict:
+    """
+    Infer set elements from existing raw_data and write them back into milp_model.
+    Called at the start of a re-optimisation run so that the new milp_model
+    (returned by the analyser without elements) regains its element lists.
+    """
+    set_elements: dict[str, list] = {}
+
+    for p in milp_model.get("parameters", []):
+        data_key = p.get("data_key", p["name"])
+        shape    = p.get("shape", [])
+        data     = raw_data.get(data_key)
+        if not data or not shape or not isinstance(data, dict):
+            continue
+        if shape[0] not in set_elements:
+            set_elements[shape[0]] = list(data.keys())
+        if len(shape) > 1:
+            first_val = next(iter(data.values()), None)
+            if isinstance(first_val, dict) and shape[1] not in set_elements:
+                set_elements[shape[1]] = list(first_val.keys())
+
+    updated_sets = []
+    for s in milp_model.get("sets", []):
+        s = dict(s)
+        if s["name"] in set_elements and not s.get("elements"):
+            s["elements"] = set_elements[s["name"]]
+        updated_sets.append(s)
+
+    return {**milp_model, "sets": updated_sets}
+
+
+def _already_collected(task: dict, milp_model: dict, raw_data: dict,
+                        force_ask: set | None = None) -> bool:
+    """
+    Return True if the task already has valid data so it can be skipped on
+    a re-optimisation run.
+
+    set_size  → skip when the set already has elements.
+    param_data → skip when raw_data has the key AND the row count matches.
+                 If the dimension changed (set size edited) the count will
+                 differ and the user will be re-prompted.
+    """
+    if task["type"] == "set_size":
+        for s in milp_model.get("sets", []):
+            if s["name"] == task["set_name"]:
+                return bool(s.get("elements"))
+        return False
+
+    if task["type"] == "param_data":
+        data_key = task["data_key"]
+        shape    = task["shape"]
+        if force_ask and data_key in force_ask:
+            return False  # explicitly forced to re-collect
+        if data_key not in raw_data:
+            return False
+        existing = raw_data[data_key]
+        if not shape:
+            return existing is not None
+        # Dimension check: row count must match the current set's element count.
+        row_set = next(
+            (s for s in milp_model.get("sets", []) if s["name"] == shape[0]),
+            None,
+        )
+        if row_set:
+            expected = len(row_set.get("elements", []))
+            if isinstance(existing, dict) and len(existing) != expected:
+                return False  # dimension changed — re-ask
+        else:
+            # Set not found (analyser may have renamed it) — re-ask to be safe.
+            if isinstance(existing, dict):
+                return False
+        return True
+
+    return False
+
+
 # Main node
 
 def input_retrieval_node(state: GraphState) -> dict:
@@ -353,6 +439,64 @@ def input_retrieval_node(state: GraphState) -> dict:
                 "input_retrieval_cursor": 0,
                 "current_input_spec": {},
             }
+
+        # Re-generation fast-forward.
+        if state.get("is_regeneration"):
+            milp_model = state["milp_model"]
+            regen_raw  = state.get("raw_data", {})
+            force_ask  = set(state.get("regen_force_ask") or [])
+
+            if state.get("regen_set_changes"):
+                # Restore old elements so the set_size prompt can show the
+                # current count as a hint — user just updates to the new count.
+                milp_model = _restore_set_elements(milp_model, regen_raw)
+                regen_cursor = 0
+                while regen_cursor < len(queue):
+                    task = queue[regen_cursor]
+                    if task["type"] == "set_size":
+                        break
+                    if task["type"] == "param_data" and not task.get("shape"):
+                        if regen_raw.get(task["data_key"]) is not None and task["data_key"] not in force_ask:
+                            regen_cursor += 1
+                            continue
+                    break
+            else:
+                # No set changes — restore elements from raw_data so set-size
+                # tasks are skipped and only new/resized params are asked.
+                milp_model = _restore_set_elements(milp_model, regen_raw)
+                regen_cursor = 0
+                regen_model  = milp_model
+                while regen_cursor < len(queue):
+                    if not _already_collected(queue[regen_cursor], regen_model, regen_raw, force_ask):
+                        break
+                    if queue[regen_cursor]["type"] == "set_size":
+                        sn  = queue[regen_cursor]["set_name"]
+                        els = next(
+                            (s.get("elements", []) for s in regen_model.get("sets", [])
+                             if s["name"] == sn),
+                            [],
+                        )
+                        regen_model = _apply_set_elements(
+                            {**state, "milp_model": regen_model}, sn, els
+                        )["milp_model"]
+                    regen_cursor += 1
+                milp_model = regen_model
+
+            patch: dict = {"milp_model": milp_model}
+            if regen_cursor >= len(queue):
+                patch.update({
+                    "input_retrieval_queue": queue,
+                    "input_retrieval_cursor": regen_cursor,
+                    "current_input_spec": {},
+                })
+                return patch
+            return {
+                **patch,
+                "input_retrieval_queue": queue,
+                "input_retrieval_cursor": regen_cursor,
+                "current_input_spec": _make_spec(queue[regen_cursor], {**state, "milp_model": milp_model}),
+            }
+
         spec = _make_spec(queue[0], state)
         return {
             "input_retrieval_queue": queue,
@@ -393,6 +537,26 @@ def input_retrieval_node(state: GraphState) -> dict:
         # Merge milp_model patch into state temporarily so _make_spec can
         # resolve set elements for any upcoming param tasks
         merged_state = {**state, **patch}
+
+        # Re-generation: auto-advance past params whose data is still valid.
+        # Uses merged_state so the freshly-set element list is visible.
+        if state.get("is_regeneration"):
+            _force = set(state.get("regen_force_ask") or [])
+            while cursor < len(queue):
+                task = queue[cursor]
+                if task["type"] == "set_size":
+                    break  # another set — always ask
+                if not _already_collected(task, merged_state["milp_model"], state.get("raw_data", {}), _force):
+                    break
+                cursor += 1
+            if cursor >= len(queue):
+                patch.update({
+                    "input_retrieval_queue": queue,
+                    "input_retrieval_cursor": cursor,
+                    "current_input_spec": {},
+                })
+                return patch
+
         next_spec = _make_spec(queue[cursor], merged_state)
         patch.update({
             "input_retrieval_queue": queue,
@@ -430,6 +594,24 @@ def input_retrieval_node(state: GraphState) -> dict:
                 "input_retrieval_cursor": cursor,
                 "current_input_spec": {},
             }
+
+        # Re-generation: auto-advance past remaining params that are still valid.
+        if state.get("is_regeneration"):
+            _force = set(state.get("regen_force_ask") or [])
+            while cursor < len(queue):
+                task = queue[cursor]
+                if task["type"] == "set_size":
+                    break
+                if not _already_collected(task, state["milp_model"], raw_data, _force):
+                    break
+                cursor += 1
+            if cursor >= len(queue):
+                return {
+                    "raw_data": raw_data,
+                    "input_retrieval_queue": queue,
+                    "input_retrieval_cursor": cursor,
+                    "current_input_spec": {},
+                }
 
         next_spec = _make_spec(queue[cursor], state)
         return {

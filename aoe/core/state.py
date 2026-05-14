@@ -50,6 +50,9 @@ class GraphState(TypedDict):
     chat_response: str              # last response text from the chat agent
     chat_pending_modification: dict # proposed model change awaiting user approval
     chat_modification_approved: bool  # True when user approves a pending modification
+    is_regeneration: bool           # True when re-running the pipeline after a chat modification
+    regen_set_changes: bool         # True when the modification adds/removes set elements
+    regen_force_ask: list           # data_keys whose values must be re-collected even if present
 
     # Token tracking
     token_usage: dict

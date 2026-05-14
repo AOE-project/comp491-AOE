@@ -139,12 +139,22 @@ def explainer_node(state: GraphState) -> dict:
 
 def _route_after_analyser(state: GraphState) -> str:
     """
-    Advance to latex_generator only when the user has explicitly approved the model.
-    Otherwise return END so AOEHandle can surface questions or the summary to the user
-    and wait for the next message.
+    Advance to latex_generator when the user approves, or automatically during
+    re-optimisation (is_regeneration=True) when the analyser has no open questions.
+    Otherwise return END so AOEHandle can surface questions or the summary.
     """
     if state.get("analyser_approved"):
         return "latex_generator"
+    if state.get("is_regeneration") and not state.get("open_questions"):
+        return "latex_generator"
+    return END
+
+
+def _route_after_explainer(state: GraphState) -> str:
+    """
+    Reserved for future routing (e.g. loop back to analyser for multi-step fixes).
+    Currently always terminates — AOEHandle picks up the next user message.
+    """
     return END
 
 
@@ -179,24 +189,6 @@ _builder.add_edge("latex_generator", "input_retrieval")
 _builder.add_conditional_edges("input_retrieval", _route_after_input_retrieval)
 _builder.add_edge("code_generator", "solver")
 _builder.add_edge("solver", "explainer")
-_builder.add_edge("explainer", END)
+_builder.add_conditional_edges("explainer", _route_after_explainer)
 
 compiled_graph = _builder.compile()
-
-
-# Re-optimisation graph — used by AOEHandle when the chat agent approves a
-# model modification. Skips analyser and input_retrieval (data already in state)
-# and regenerates code, re-solves, and re-explains with the updated milp_model.
-
-_re_opt_builder = StateGraph(GraphState)
-
-_re_opt_builder.add_node("code_generator", _code_generator)
-_re_opt_builder.add_node("solver", solver_node)
-_re_opt_builder.add_node("explainer", explainer_node)
-
-_re_opt_builder.set_entry_point("code_generator")
-_re_opt_builder.add_edge("code_generator", "solver")
-_re_opt_builder.add_edge("solver", "explainer")
-_re_opt_builder.add_edge("explainer", END)
-
-re_optimization_graph = _re_opt_builder.compile()

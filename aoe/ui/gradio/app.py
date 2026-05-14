@@ -204,9 +204,14 @@ def _format_sidebar(state: dict):
     return png_path, confirmed, unconfirmed
 
 
-def _make_df_for_spec(spec: dict) -> tuple[Optional[pd.DataFrame], bool]:
+def _make_df_for_spec(
+    spec: dict,
+    existing_data=None,
+) -> tuple[Optional[pd.DataFrame], bool]:
     """
-    Build an empty DataFrame matching the spec's shape.
+    Build a DataFrame matching the spec's shape.
+    Pre-fills cells from existing_data (raw_data value for this parameter)
+    so users only need to fill in new or changed rows.
     Returns (df, show) — show=False when max dimension > 10.
     """
     row_labels = spec.get("row_labels") or []
@@ -219,16 +224,33 @@ def _make_df_for_spec(spec: dict) -> tuple[Optional[pd.DataFrame], bool]:
     if col_labels:
         if max(len(row_labels), len(col_labels)) > 10:
             return None, False
+        rows = []
+        for r in row_labels:
+            row = []
+            for c in col_labels:
+                val = None
+                if isinstance(existing_data, dict):
+                    r_data = existing_data.get(r)
+                    if isinstance(r_data, dict):
+                        val = r_data.get(c)
+                row.append(val)
+            rows.append(row)
         df = pd.DataFrame(
-            [[None] * len(col_labels) for _ in row_labels],
+            rows,
             index=pd.Index(row_labels, name=""),
             columns=col_labels,
         )
     else:
         if len(row_labels) > 10:
             return None, False
+        rows = []
+        for r in row_labels:
+            val = None
+            if isinstance(existing_data, dict):
+                val = existing_data.get(r)
+            rows.append([val])
         df = pd.DataFrame(
-            [[None] for _ in row_labels],
+            rows,
             index=pd.Index(row_labels, name=""),
             columns=[param_name],
         )
@@ -308,7 +330,9 @@ def _build_all_outputs(
     )
 
     if is_tabular:
-        df, show_df = _make_df_for_spec(spec)
+        data_key     = spec.get("data_key")
+        existing_val = ((state or {}).get("raw_data") or {}).get(data_key)
+        df, show_df  = _make_df_for_spec(spec, existing_data=existing_val)
         df_upd   = gr.update(visible=show_df, value=df) if show_df else gr.update(visible=False, value=None)
         file_upd = gr.update(visible=True, value=None)   # always offer upload during collection
     else:
