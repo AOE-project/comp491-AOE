@@ -498,6 +498,7 @@ def input_retrieval_node(state: GraphState) -> dict:
             }
 
         spec = _make_spec(queue[0], state)
+        
         return {
             "input_retrieval_queue": queue,
             "input_retrieval_cursor": 0,

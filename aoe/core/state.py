@@ -34,6 +34,13 @@ class GraphState(TypedDict):
     generated_code: str             # output of CodeGenerator
     code_syntax_error: str | None   # syntax error message from CodeGenerator, None if valid
 
+    # regeneration mechanisim (debug/errors)
+    last_execution_error: str | None        # solver/execution error message
+    debug_attempts: list                    # list of {"attempt": N, "error": str, "action": str}
+    last_error_type: str | None             # "syntax_error" | "runtime_error" | "modeling_error" | "unknown_error" | None
+    max_debug_attempts: int                 # default: 5
+    regeneration_attempts: int              # tracks multi-attempt recovery (1st broken, 2nd+ fixed)
+
     # Solver
     solver_result: dict             # output of SolverRunner
 

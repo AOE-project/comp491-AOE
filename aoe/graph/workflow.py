@@ -19,6 +19,7 @@ from langgraph.graph import StateGraph, END
 
 from agents.analyser import analyser_node
 from agents.code_generator import code_generator_node
+from agents.debug import debug_node
 from agents.input_retrieval import input_retrieval_node
 from agents.latex_generator import latex_generator_node
 from core.config import load_settings
@@ -136,7 +137,6 @@ def explainer_node(state: GraphState) -> dict:
 
 # Routing
 
-
 def _route_after_analyser(state: GraphState) -> str:
     """
     Advance to latex_generator when the user approves, or automatically during
@@ -169,6 +169,35 @@ def _route_after_input_retrieval(state: GraphState) -> str:
         return "code_generator"
     return END
 
+#regeneration router
+def _route_after_solver(state: GraphState) -> str:
+    """If error after solver execution, route to debug node"""
+    error = state.get("last_execution_error")
+    if error:
+        return "debug"
+    return "explainer"
+
+def _route_after_debug(state: GraphState) -> str:
+    """
+    Route after debug classification.
+    
+    Error type → Recovery action mapping:
+    - syntax_error, runtime_error, modeling_error → code_generator
+    - max_retries_exceeded → explainer (give up, show result)
+    - unknown_error → explainer (fallback)
+    """
+    error_type = state.get("last_error_type")
+    
+    # CRITICAL: If max retries exceeded, STOP regeneration and end gracefully
+    if error_type == "max_retries_exceeded":
+        return "explainer"
+    
+    # Route code errors to code_generator for LLM regeneration
+    code_gen_errors = ["syntax_error", "runtime_error", "modeling_error"]
+    if error_type in code_gen_errors:
+        return "code_generator"
+    else:
+        return "explainer"  # unknown or fallback
 
 
 # Graph assembly
@@ -181,6 +210,7 @@ _builder.add_node("latex_generator", _latex_generator)
 _builder.add_node("input_retrieval", input_retrieval_node)
 _builder.add_node("code_generator", _code_generator)
 _builder.add_node("solver", solver_node)
+_builder.add_node("debug", debug_node)
 _builder.add_node("explainer", explainer_node)
 
 _builder.set_entry_point("analyser")
@@ -188,7 +218,10 @@ _builder.add_conditional_edges("analyser", _route_after_analyser)
 _builder.add_edge("latex_generator", "input_retrieval")
 _builder.add_conditional_edges("input_retrieval", _route_after_input_retrieval)
 _builder.add_edge("code_generator", "solver")
-_builder.add_edge("solver", "explainer")
+
+_builder.add_conditional_edges("solver", _route_after_solver)
+_builder.add_conditional_edges("debug", _route_after_debug)
+
 _builder.add_conditional_edges("explainer", _route_after_explainer)
 
 compiled_graph = _builder.compile()

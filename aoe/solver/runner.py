@@ -23,10 +23,19 @@ import sys
 import tempfile
 from pathlib import Path
 
+from core.config import load_settings
 from core.state import GraphState
 
 _SESSIONS_ROOT = Path(__file__).resolve().parent.parent / "sessions"
 _TIMEOUT_SECONDS = 60
+_settings = load_settings()
+
+_INJECTED_ERROR_MESSAGES = {
+    "syntax_error": "SyntaxError: invalid syntax at line 5",
+    "runtime_error": "NameError: name 'x' is not defined",
+    "modeling_error": "GurobiPy error: model.addvars() received invalid argument",
+    "unknown_error": "UnexpectedError: Something went wrong",
+}
 
 
 def _empty_payload(extra: dict) -> dict:
@@ -118,17 +127,75 @@ def run_generated_code(code: str, cwd: Path | None = None) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Node helpers (from ko_uni_map)
+# ---------------------------------------------------------------------------
+
+def _get_injected_test_error_result(state: GraphState) -> dict | None:
+    """Return injected solver output in test mode; otherwise return None."""
+    regeneration_attempts = state.get("regeneration_attempts", 0)
+    should_inject_error = (
+        _settings.test_error_injection
+        and regeneration_attempts == 0  # Only inject on 1st attempt (no regenerations yet)
+    )
+    print(
+        f"[DEBUG] solver_node: regeneration_attempts={regeneration_attempts}, "
+        f"should_inject_error={should_inject_error}, "
+        f"test_error_injection={_settings.test_error_injection}"
+    )
+
+    if not should_inject_error:
+        return None
+
+    error_type = getattr(_settings, "test_error_type", "syntax_error")
+    error_msg = _INJECTED_ERROR_MESSAGES.get(error_type, _INJECTED_ERROR_MESSAGES["syntax_error"])
+    print(f"[INJECTING ERROR] Type: {error_type.upper()}")
+    print(f"[ERROR MESSAGE] {error_msg}")
+
+    # Return an injected failure using the rich ardil payload shape so that
+    # downstream consumers (UI, debug nodes) see a consistent structure.
+    return {
+        "solver_result": _empty_payload({
+            "status": "runtime_error",
+            "stderr": error_msg,
+            "returncode": 1,
+        }),
+        "last_execution_error": error_msg,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Node
+# ---------------------------------------------------------------------------
+
 def solver_node(state: GraphState) -> dict:
     """LangGraph node — runs the generated Gurobi script and stores the result."""
+
+    # Test-mode error injection (ko_uni_map feature, kept as requested)
+    injected_result = _get_injected_test_error_result(state)
+    if injected_result is not None:
+        return injected_result
+
     code = (state.get("generated_code") or "").strip()
     if not code:
         return {
             "solver_result": _empty_payload({
                 "stderr": "No generated code found in state.",
-            })
+            }),
+            "last_execution_error": "No generated code found in state.",
         }
 
     session_id = state.get("session_id")
     session_dir = _SESSIONS_ROOT / session_id if session_id else None
 
-    return {"solver_result": run_generated_code(code, cwd=session_dir)}
+    result = run_generated_code(code, cwd=session_dir)
+
+    # Capture execution error for debug routing (ko_uni_map feature)
+    last_execution_error = None
+    if result["status"] not in ("optimal", "infeasible", "unbounded"):
+        last_execution_error = result.get("stderr") or f"Solver status: {result['status']}"
+
+    return {
+        "solver_result":        result,
+        "last_execution_error": last_execution_error,
+    }

@@ -1,0 +1,132 @@
+{
+    "units": "pixels",
+    "buildings": [
+        {
+            "name": "Rektörlük",
+            "x": 325,
+            "y": 528,
+            "demand": 80
+        },
+        {
+            "name": "Kütüphane",
+            "x": 360,
+            "y": 499,
+            "demand": 200
+        },
+        {
+            "name": "Öğrenci Merkezi",
+            "x": 368,
+            "y": 539,
+            "demand": 350
+        },
+        {
+            "name": "Kış Bahçesi",
+            "x": 383,
+            "y": 592,
+            "demand": 200
+        },
+        {
+            "name": "Buz Pateni Pisti",
+            "x": 226,
+            "y": 372,
+            "demand": 50
+        },
+        {
+            "name": "Spor Salonu",
+            "x": 292,
+            "y": 285,
+            "demand": 170
+        },
+        {
+            "name": "Sağlık Merkezi",
+            "x": 82,
+            "y": 746,
+            "demand": 25
+        },
+        {
+            "name": "S Yurdu",
+            "x": 110,
+            "y": 770,
+            "demand": 150
+        },
+        {
+            "name": "CASE",
+            "x": 449,
+            "y": 471,
+            "demand": 280
+        },
+        {
+            "name": "SGKM",
+            "x": 459,
+            "y": 416,
+            "demand": 350
+        },
+        {
+            "name": "Odeon",
+            "x": 467,
+            "y": 513,
+            "demand": 400
+        },
+        {
+            "name": "HUMS",
+            "x": 506,
+            "y": 429,
+            "demand": 250
+        },
+        {
+            "name": "Hukuk Fakültesi",
+            "x": 523,
+            "y": 265,
+            "demand": 100
+        },
+        {
+            "name": "Tıp Fakültesi",
+            "x": 492,
+            "y": 364,
+            "demand": 150
+        },
+     
+        {
+            "name": "Fen Bilimleri Fakültesi",
+            "x": 562,
+            "y": 392,
+            "demand": 270
+        },
+        {
+            "name": "Mühendislik Fakültesi",
+            "x": 531,
+            "y": 302,
+            "demand": 350
+        },
+        {
+            "name": "Futbol Sahası",
+            "x": 559,
+            "y": 103,
+            "demand": 70
+        },
+        {
+            "name": "SNA",
+            "x": 587,
+            "y": 192,
+            "demand": 370
+        },
+        {
+            "name": "Açık Havuz",
+            "x": 454,
+            "y": 176,
+            "demand": 30
+        },
+        {
+            "name": "ELC",
+            "x": 365,
+            "y": 465,
+            "demand": 150
+        },
+        {
+            "name": "Henry Ford",
+            "x": 231,
+            "y": 594,
+            "demand": 200
+        }
+    ]
+}
