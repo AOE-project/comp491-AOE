@@ -199,16 +199,40 @@ def run(
     # input retrieval (when the last required CSV was provided).
     solver_result = state.get("solver_result") or {}
     if solver_result:
-        status = solver_result.get("status", "")
-        stdout = (solver_result.get("stdout") or "").strip()
-        stderr = (solver_result.get("stderr") or "").strip()
+        status    = (solver_result.get("status") or "").lower()
+        obj_value = solver_result.get("objective_value")
+        variables = solver_result.get("variables") or {}
+        iis_path  = solver_result.get("iis_path")
+        stderr    = (solver_result.get("stderr") or "").strip()
 
-        if status == "success":
-            console.print("\n[bold green]Solver Result:[/bold green]")
-            console.print(Panel(stdout, border_style="green", padding=(0, 1)))
+        if status == "optimal":
+            console.print("\n[bold green]Solver Result: Optimal[/bold green]")
+            lines = []
+            if obj_value is not None:
+                lines.append(f"Objective: {obj_value}")
+            if variables:
+                lines.append("")
+                lines.append("Variables:")
+                for name, value in variables.items():
+                    lines.append(f"  {name} = {value}")
+            else:
+                lines.append("(no non-zero decision variables)")
+            console.print(Panel("\n".join(lines), border_style="green", padding=(0, 1)))
+        elif status == "infeasible":
+            console.print("\n[bold red]Solver Result: Infeasible[/bold red]")
+            note = "Model has no feasible solution."
+            if iis_path:
+                note += f"\nIIS written to: {iis_path}"
+            console.print(Panel(note, border_style="red", padding=(0, 1)))
+        elif status == "unbounded":
+            console.print("\n[bold yellow]Solver Result: Unbounded[/bold yellow]")
+            console.print(Panel(
+                "Objective is unbounded — no finite optimum exists.",
+                border_style="yellow", padding=(0, 1),
+            ))
         else:
-            console.print(f"\n[bold red]Solver Error ({status}):[/bold red]")
-            console.print(Panel(stderr, border_style="red", padding=(0, 1)))
+            console.print(f"\n[bold red]Solver Error ({status or 'unknown'}):[/bold red]")
+            console.print(Panel(stderr or "No diagnostic output.", border_style="red", padding=(0, 1)))
 
 if __name__ == "__main__":
     app()

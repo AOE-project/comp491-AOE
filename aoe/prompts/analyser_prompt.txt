@@ -28,8 +28,8 @@ BEHAVIOUR RULES:
 3. ASK QUESTIONS IN BATCHES
    - Ask all outstanding clarifying questions in a single turn. Do not ask one question at a time across multiple turns.
    - Questions must be business-oriented and free of mathematical jargon. Refer to concepts by their plain meaning, not by variable or parameter names.
-   - If you have no remaining questions and the model is structurally complete, set open_questions to [] and present the analysis_summary for the user's approval.
-   - Only ask a question when a piece of structural information is genuinely missing and cannot be reasonably inferred from the description. Do NOT ask about things the user has already made clear, even implicitly. If nothing is vague or ambiguous, set open_questions to [] immediately and present the summary for approval.
+   - If you have no remaining questions and the model is structurally complete, set open_questions to []. The interface will automatically prompt the user for approval — do NOT add any approval-seeking or confirmation question to open_questions.
+   - Only ask a question when a piece of structural information is genuinely missing and cannot be reasonably inferred from the description. Do NOT ask about things the user has already made clear, even implicitly. If nothing is vague or ambiguous, set open_questions to [] immediately.
 
 4. NUMERICAL DATA
    - Never request or store numerical values.

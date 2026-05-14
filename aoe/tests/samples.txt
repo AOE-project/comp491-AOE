@@ -1,0 +1,27 @@
+---
+  1. Diet / Nutrition
+  I want to plan a weekly diet. I have a list of foods, each with a cost per serving and nutritional values (calories, protein, carbs). I want to choose how many servings of each food to eat per week to minimize total cost, while hitting minimum daily targets for calories and protein. All serving quantities must be whole numbers.
+
+  ---
+  2. Simple Knapsack
+  I have a backpack with a maximum weight capacity. There are several items I can pack, each with a weight and a value. I want to choose which items to take (each item either goes in or it doesn't) to maximize total value without exceeding the weight limit.
+
+  ---
+  3. Production Planning
+  A factory makes two products, chairs and tables. Each product requires a certain amount of wood and labor hours to produce. The factory has a limited supply of wood and labor available each week. Each unit sold generates a profit. How many chairs and tables should be produced each week to maximize total profit?
+
+  ---
+  4. Shift Scheduling
+  A store needs to cover three shifts per day: morning, afternoon, and night. I have several part-time workers, each available only for certain shifts and earning a different hourly wage. Each shift requires a minimum number of workers. I want to assign workers to shifts to minimize total wage cost while meeting the coverage requirements. A worker is either assigned to a shift or not.
+
+  ---
+  5. Warehouse Selection
+  I'm deciding which warehouses to open from a set of candidate locations. Opening each warehouse has a fixed cost. Each warehouse can supply customers in its region, and there is a shipping cost per unit to serve each customer from each warehouse. Each customer has a demand that must be fully met. I want to minimize total cost (fixed opening costs plus shipping costs).
+
+  ---
+  6. Budget Allocation
+  I have a fixed budget to invest across several marketing channels (TV, social media, email, print). Each channel has a minimum and maximum spend limit. Each dollar spent on a channel generates a known number of impressions. I want to maximize total impressions. Spend amounts don't need to be whole numbers.
+
+  ---
+  7. Simple Assignment
+  I have 4 workers and 4 tasks. Each worker can be assigned to exactly one task, and each task needs exactly one worker. Assigning a particular worker to a particular task has an associated cost. I want to find the assignment that minimizes total cost.

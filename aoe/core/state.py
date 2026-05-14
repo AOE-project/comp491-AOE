@@ -11,6 +11,7 @@ class GraphState(TypedDict):
     session_id: str
     problem_description: str        # initial natural language user message
     history: list                   # full conversation history (role, content pairs)
+    chat_history: list              # Gradio chatbot transcript (rendered messages, written by UI)
 
     # Analyser
     iteration_count: int            # number of analyser turns so far (max 10)
@@ -43,8 +44,22 @@ class GraphState(TypedDict):
     # Solver
     solver_result: dict             # output of SolverRunner
 
+    # LaTeX formulation
+    latex_model: str                # LaTeX body source; populated by LaTeXGeneratorAgent
+    latex_png_path: str             # absolute path to the compiled PNG; populated by LaTeXGeneratorAgent
+
     # Explanation
     explanation: str                # output of Explainer
+
+    # Chat Agent (post-solver interactive Q&A)
+    chat_mode: bool                 # True once the solver has run and chat is active
+    chat_history: list              # chat-specific turns: [{"role": ..., "content": ...}, ...]
+    chat_response: str              # last response text from the chat agent
+    chat_pending_modification: dict # proposed model change awaiting user approval
+    chat_modification_approved: bool  # True when user approves a pending modification
+    is_regeneration: bool           # True when re-running the pipeline after a chat modification
+    regen_set_changes: bool         # True when the modification adds/removes set elements
+    regen_force_ask: list           # data_keys whose values must be re-collected even if present
 
     # Token tracking
     token_usage: dict

@@ -133,20 +133,21 @@ class SessionLogger:
         path = self.dir / "solver_result.csv"
         variables = result.get("variables") or result.get("solution")
 
-        if isinstance(variables, list) and variables:
-            first = variables[0]
-            fieldnames = list(first.keys()) if isinstance(first, dict) else ["value"]
-            with path.open("w", newline="", encoding="utf-8") as fh:
-                writer = csv.DictWriter(fh, fieldnames=fieldnames)
-                writer.writeheader()
+        with path.open("w", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(["status",          result.get("status", "")])
+            writer.writerow(["objective_value", result.get("objective_value", "")])
+            writer.writerow([])
+            writer.writerow(["variable", "value"])
+            if isinstance(variables, dict):
+                for name, value in variables.items():
+                    writer.writerow([name, value])
+            elif isinstance(variables, list):
                 for row in variables:
-                    writer.writerow(row if isinstance(row, dict) else {"value": row})
-        else:
-            with path.open("w", newline="", encoding="utf-8") as fh:
-                writer = csv.writer(fh)
-                writer.writerow(["key", "value"])
-                for k, v in result.items():
-                    writer.writerow([k, v])
+                    if isinstance(row, dict):
+                        writer.writerow([row.get("name", ""), row.get("value", "")])
+                    else:
+                        writer.writerow(["", row])
 
     @classmethod
     def load(

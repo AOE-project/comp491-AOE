@@ -116,9 +116,15 @@ textarea::placeholder, input::placeholder { color: var(--aoe-t2) !important; }
     color: var(--aoe-t0) !important;
     margin-bottom: 10px !important;
 }
-.data-panel .data-error p, .data-panel .data-error blockquote {
+.data-panel .data-error,
+.data-panel .data-error *,
+.data-error,
+.data-error * {
     color: var(--aoe-red) !important;
     font-size: 12px !important;
+}
+.data-panel .data-error blockquote,
+.data-error blockquote {
     border-left: 3px solid var(--aoe-red) !important;
     padding-left: 8px !important;
     margin-bottom: 8px !important;
@@ -131,6 +137,91 @@ textarea::placeholder, input::placeholder { color: var(--aoe-t2) !important; }
 }
 .data-submit-btn:hover { opacity: 0.85 !important; }
 
+/* Dataframe equal-width columns — fit panel, never scroll horizontally */
+#param-df,
+#param-df > div,
+#param-df .wrap,
+#param-df .table-wrap,
+#param-df .scroll-hide,
+#param-df .svelte-virtual-table-viewport {
+    overflow-x: hidden !important;
+    width: 100% !important;
+    max-width: 100% !important;
+}
+#param-df table {
+    table-layout: fixed !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+}
+/* Neutralise Gradio's inline <col> widths so fixed layout distributes evenly */
+#param-df table colgroup col {
+    width: auto !important;
+    min-width: 0 !important;
+}
+#param-df table th,
+#param-df table td {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    box-sizing: border-box !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+}
+/* Some Gradio versions put the cell value inside a nested span/input — clip it too */
+#param-df table th *,
+#param-df table td * {
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+
+/* Transparent in-cell editor — no chunky blue textbox while typing */
+#param-df table td input,
+#param-df table td textarea,
+#param-df table td .cell-wrap input,
+#param-df table td .cell-wrap textarea,
+#param-df table td [contenteditable="true"] {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    color: var(--aoe-t0) !important;
+    font-size: inherit !important;
+    width: 100% !important;
+    height: 100% !important;
+    outline: none !important;
+}
+#param-df table td input:focus,
+#param-df table td textarea:focus,
+#param-df table td [contenteditable="true"]:focus {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+/* Compact upload button — no display !important so Gradio's display:none can hide it */
+.upload-csv-btn {
+    width: auto !important;
+    margin-bottom: 10px !important;
+}
+.upload-csv-btn button {
+    background: transparent !important;
+    border: 1px solid var(--aoe-b1) !important;
+    color: var(--aoe-t1) !important;
+    padding: 6px 14px !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+}
+.upload-csv-btn button:hover {
+    background: var(--aoe-card) !important;
+    color: var(--aoe-t0) !important;
+    border-color: var(--aoe-accent) !important;
+}
+
 /* Sidebar */
 .sidebar-card {
     background: var(--aoe-card) !important;
@@ -140,6 +231,12 @@ textarea::placeholder, input::placeholder { color: var(--aoe-t2) !important; }
     margin-bottom: 2px !important;
 }
 .sidebar-card p, .sidebar-card li { color: var(--aoe-t1) !important; font-size: 12px !important; }
+.sidebar-scroll {
+    max-height: 80px !important;
+    overflow-y: auto !important;
+    scrollbar-width: thin !important;
+    scrollbar-color: var(--aoe-b1) transparent !important;
+}
 .sidebar-card code {
     color: var(--aoe-accent) !important;
     background: var(--aoe-asoft) !important;
@@ -194,6 +291,292 @@ h3 {
 
 footer, .footer { display: none !important; }
 
+/* ── Sessions panel ─────────────────────────────────────── */
+
+/* Toggle button in the header bar */
+.sessions-toggle-btn {
+    background: transparent !important;
+    border: 1px solid var(--aoe-b1) !important;
+    color: var(--aoe-t2) !important;
+    font-size: 14px !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+    padding: 4px 10px !important;
+}
+.sessions-toggle-btn:hover {
+    background: var(--aoe-card) !important;
+    color: var(--aoe-t0) !important;
+    border-color: var(--aoe-accent) !important;
+}
+
+/* Column */
+#sessions-col {
+    border-right: 1px solid var(--aoe-b0) !important;
+    padding-right: 6px !important;
+}
+
+/* Scrollable list — hide scrollbar track but keep thumb */
+#sessions-radio {
+    overflow-y: auto !important;
+    max-height: 500px !important;
+    scrollbar-width: thin !important;
+    scrollbar-color: var(--aoe-b1) transparent !important;
+    /* add a little bottom padding so last item isn't flush */
+    padding-bottom: 4px !important;
+}
+#sessions-radio::-webkit-scrollbar { width: 3px !important; }
+#sessions-radio::-webkit-scrollbar-thumb {
+    background: var(--aoe-b1) !important;
+    border-radius: 2px !important;
+}
+
+/* Hide native radio circles */
+#sessions-radio input[type="radio"] {
+    position: absolute !important;
+    opacity: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+    pointer-events: none !important;
+}
+
+/* Item list container */
+#sessions-radio .wrap {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 2px !important;
+    padding: 0 !important;
+}
+
+/* Each session row */
+#sessions-radio label {
+    display: block !important;
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    border-radius: 6px !important;
+    padding: 9px 10px !important;
+    cursor: pointer !important;
+    transition: background 0.12s, border-color 0.12s !important;
+}
+
+/* Label text: title on first line (bright), date on second (dim) */
+#sessions-radio label span {
+    display: block !important;
+    white-space: pre-line !important;
+    word-break: break-word !important;
+    font-size: 11px !important;
+    line-height: 1.6 !important;
+    color: var(--aoe-t1) !important;
+}
+#sessions-radio label span::first-line {
+    color: var(--aoe-t0) !important;
+    font-weight: 500 !important;
+}
+
+/* Hover state */
+#sessions-radio label:hover {
+    background: var(--aoe-card) !important;
+    border-color: var(--aoe-b1) !important;
+}
+#sessions-radio label:hover span { color: var(--aoe-t0) !important; }
+
+/* Selected state */
+#sessions-radio label:has(input:checked) {
+    background: var(--aoe-asoft) !important;
+    border-color: var(--aoe-accent) !important;
+}
+#sessions-radio label:has(input:checked) span { color: var(--aoe-t0) !important; }
+
+/* Send button */
+#send-btn {
+    height: 60px !important;
+    font-size: 12px !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+}
+
+/* Message input */
+textarea {
+    overflow-y: auto !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+}
+
+/* Code accordion (details/summary inside chat messages) */
+.message details.code-accordion {
+    background: var(--aoe-bg) !important;
+    border: 1px solid var(--aoe-b1) !important;
+    border-radius: 7px !important;
+    margin: 6px 0 !important;
+    overflow: hidden !important;
+}
+.message details.code-accordion summary {
+    cursor: pointer !important;
+    padding: 8px 14px !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.05em !important;
+    color: var(--aoe-accent) !important;
+    user-select: none !important;
+    list-style: none !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+}
+.message details.code-accordion summary::before {
+    content: "▶" !important;
+    font-size: 9px !important;
+    transition: transform 0.15s !important;
+    display: inline-block !important;
+}
+.message details.code-accordion[open] summary::before {
+    transform: rotate(90deg) !important;
+}
+.message details.code-accordion[open] summary {
+    border-bottom: 1px solid var(--aoe-b1) !important;
+}
+.message details.code-accordion pre,
+.message details.code-accordion code {
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 12px !important;
+}
+
+/* Solver result blocks */
+.result-block {
+    border-radius: 8px !important;
+    padding: 12px 16px !important;
+    margin-top: 8px !important;
+}
+.result-success {
+    background: rgba(31,168,118,0.1) !important;
+    border: 1px solid rgba(31,168,118,0.35) !important;
+}
+.result-error {
+    background: rgba(224,92,92,0.1) !important;
+    border: 1px solid rgba(224,92,92,0.35) !important;
+}
+.result-unbounded {
+    background: rgba(218,165,32,0.1) !important;
+    border: 1px solid rgba(218,165,32,0.4) !important;
+}
+.result-other {
+    background: rgba(139,163,188,0.08) !important;
+    border: 1px solid var(--aoe-b1) !important;
+}
+.result-badge {
+    display: inline-block !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.08em !important;
+    text-transform: uppercase !important;
+    padding: 2px 10px !important;
+    border-radius: 20px !important;
+    margin-bottom: 10px !important;
+}
+.result-success .result-badge {
+    background: rgba(31,168,118,0.2) !important;
+    color: var(--aoe-green) !important;
+    border: 1px solid var(--aoe-green) !important;
+}
+.result-error .result-badge {
+    background: rgba(224,92,92,0.2) !important;
+    color: var(--aoe-red) !important;
+    border: 1px solid var(--aoe-red) !important;
+}
+.result-unbounded .result-badge {
+    background: rgba(218,165,32,0.2) !important;
+    color: #DAA520 !important;
+    border: 1px solid #DAA520 !important;
+}
+.result-other .result-badge {
+    background: rgba(139,163,188,0.15) !important;
+    color: var(--aoe-t1) !important;
+    border: 1px solid var(--aoe-b1) !important;
+}
+
+/* Objective: one prominent highlighted line */
+.result-objective {
+    display: flex !important;
+    align-items: baseline !important;
+    gap: 10px !important;
+    padding: 8px 12px !important;
+    margin-bottom: 10px !important;
+    background: rgba(46,125,209,0.08) !important;
+    border-left: 3px solid var(--aoe-accent) !important;
+    border-radius: 4px !important;
+}
+.result-objective-label {
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+    color: var(--aoe-t1) !important;
+}
+.result-objective-value {
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 16px !important;
+    font-weight: 600 !important;
+    color: var(--aoe-t0) !important;
+}
+
+/* Variables table — two columns, monospace values */
+.result-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin-top: 4px !important;
+    font-size: 12px !important;
+}
+.result-table thead th {
+    text-align: left !important;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+    color: var(--aoe-t2) !important;
+    padding: 6px 10px !important;
+    border-bottom: 1px solid var(--aoe-b1) !important;
+}
+.result-table tbody td {
+    padding: 5px 10px !important;
+    border-bottom: 1px solid var(--aoe-b0) !important;
+    color: var(--aoe-t0) !important;
+}
+.result-table tbody tr:last-child td { border-bottom: none !important; }
+.result-table .var-name {
+    font-family: 'IBM Plex Mono', monospace !important;
+    color: var(--aoe-t1) !important;
+}
+.result-table .var-value {
+    font-family: 'IBM Plex Mono', monospace !important;
+    text-align: right !important;
+    color: var(--aoe-accent) !important;
+    width: 30% !important;
+}
+
+.result-note {
+    font-size: 12px !important;
+    color: var(--aoe-t1) !important;
+    line-height: 1.55 !important;
+}
+.result-note code {
+    font-family: 'IBM Plex Mono', monospace !important;
+    background: rgba(255,255,255,0.06) !important;
+    padding: 1px 5px !important;
+    border-radius: 3px !important;
+    color: var(--aoe-accent) !important;
+    font-size: 11px !important;
+}
+
+.result-pre {
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 12px !important;
+    color: var(--aoe-t0) !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
+}
 /* Solver Error Boxes */
 .solver-error-box {
     border-left: 4px solid;

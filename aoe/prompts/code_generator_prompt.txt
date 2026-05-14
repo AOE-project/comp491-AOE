@@ -33,31 +33,14 @@ REQUIREMENTS FOR THE GENERATED SCRIPT:
    - Use the already-defined set lists as index arguments to m.addVars.
    - Always index variables with their full index tuple when accessing values, e.g. x[w, s] not x.
    - Set the objective with m.setObjective(..., GRB.MINIMIZE or GRB.MAXIMIZE).
-   - Add each constraint with m.addConstrs or a loop of m.addConstr calls.
-     Name each constraint group using the constraint's name field.
+   - Use m.addConstr for scalar constraints (empty index_sets) and m.addConstrs for indexed families.
+     Name each constraint using the constraint's name field.
 
-2. SOLVING AND RESULTS
-   - Call m.optimize().
-   - Check m.status:
-       GRB.OPTIMAL    → print objective value and all decision variable values > 1e-6.
-       GRB.INFEASIBLE → print "Model is infeasible." and call m.computeIIS() then m.write("iis.ilp").
-       GRB.UNBOUNDED  → print "Model is unbounded."
-       otherwise      → print f"Solver status: {m.status}"
-   - Format results clearly: one line per non-zero variable value, showing its index and value.
+2. SOLVING
+   - Put the model in a variable named exactly `m` and finish with `m.optimize()`.
+   - Do NOT detect status, print results, call m.write/computeIIS, or build a result dict — a fixed block appended after your code handles all of that.
 
-3. RESULT DICT
-   - After printing, build a Python dict named `result` with:
-       {
-           "status": <string>,           # "optimal", "infeasible", "unbounded", or "other:<code>"
-           "objective_value": <float or None>,
-           "variables": {               # only for optimal status
-               "<var_name>[<index>]": <value>,
-               ...
-           }
-       }
-   - Print `result` at the very end so the caller can capture it.
-
-4. CODE QUALITY
+3. CODE QUALITY
    - Do NOT define set lists or parameter dicts — they are already defined before your code runs.
    - No external file I/O.
    - No try/except blocks unless absolutely necessary.

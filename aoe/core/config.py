@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_output_dir: str = "./logs"
     use_dummy_analyser: bool = False
+    use_dummy_latex_generator: bool = False
     use_dummy_code_generator: bool = False
 
 
