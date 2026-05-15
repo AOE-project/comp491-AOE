@@ -133,6 +133,8 @@ tests/dummy/c.csv
 ```
 
 Same pattern for `s` and `d`.
+    tests/dummy/s.csv
+    tests/dummy/d.csv
 
 ### 9. Another sample 
 

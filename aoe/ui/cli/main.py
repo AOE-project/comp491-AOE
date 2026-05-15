@@ -13,7 +13,6 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.text import Text
 
 from middleware.handle import AOEHandle
 
@@ -101,6 +100,7 @@ def _run_input_retrieval(handle: AOEHandle, state: dict) -> dict:
                     continue
                 break
 
+            _print_collected(param_name, str(path))
             state = handle.run(str(path), state)
 
             # Check immediately if the node reported a validation error
@@ -109,8 +109,6 @@ def _run_input_retrieval(handle: AOEHandle, state: dict) -> dict:
             if new_error:
                 # Loop will print the error on the next iteration
                 continue
-
-            _print_collected(param_name, str(path))
 
         else:
             # Unknown spec type — skip by sending an empty string
@@ -197,6 +195,8 @@ def run(
         raise typer.Exit(1)
 
     # ── Solver result ─────────────────────────────────────────────────────
+    # Solver has already run in the same graph invocation that completed
+    # input retrieval (when the last required CSV was provided).
     solver_result = state.get("solver_result") or {}
     if solver_result:
         status    = (solver_result.get("status") or "").lower()
@@ -233,7 +233,6 @@ def run(
         else:
             console.print(f"\n[bold red]Solver Error ({status or 'unknown'}):[/bold red]")
             console.print(Panel(stderr or "No diagnostic output.", border_style="red", padding=(0, 1)))
-
 
 if __name__ == "__main__":
     app()

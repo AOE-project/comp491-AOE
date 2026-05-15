@@ -13,6 +13,12 @@
     --aoe-t0:      #EFF3F8;
     --aoe-t1:      #8BA3BC;
     --aoe-t2:      #4A6278;
+    
+    /* Error type colors */
+    --error-syntax:    #F5A623;  /* Orange for syntax errors */
+    --error-runtime:   #E74C3C;  /* Red for runtime errors */
+    --error-modeling:  #3498DB;  /* Blue for modeling errors */
+    --error-unknown:   #95A5A6;  /* Gray for unknown errors */
 }
 
 body, html { background: var(--aoe-bg) !important; }
@@ -570,4 +576,58 @@ textarea {
     padding: 0 !important;
     background: transparent !important;
     border: none !important;
+}
+/* Solver Error Boxes */
+.solver-error-box {
+    border-left: 4px solid;
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin: 8px 0;
+    background: rgba(0,0,0,0.3);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-x: auto;
+}
+
+.error-syntax {
+    border-left-color: var(--error-syntax) !important;
+    color: var(--error-syntax) !important;
+}
+
+.error-runtime {
+    border-left-color: var(--error-runtime) !important;
+    color: var(--error-runtime) !important;
+}
+
+.error-modeling {
+    border-left-color: var(--error-modeling) !important;
+    color: var(--error-modeling) !important;
+}
+
+.error-unknown {
+    border-left-color: var(--error-unknown) !important;
+    color: var(--error-unknown) !important;
+}
+
+.error-header {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+}
+
+/* Attach button — paperclip icon styled as icon-only */
+.attach-btn button {
+    min-width: 36px !important;
+    max-width: 48px !important;
+    padding: 0 10px !important;
+    background: transparent !important;
+    color: var(--aoe-t1) !important;
+    border: 1px solid var(--aoe-b1) !important;
+    font-size: 15px !important;
+}
+.attach-btn button:hover {
+    background: var(--aoe-card) !important;
+    color: var(--aoe-t0) !important;
 }

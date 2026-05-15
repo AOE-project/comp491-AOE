@@ -68,13 +68,21 @@ def _build_user_message(state: GraphState) -> str:
                 "previous_questions": previous_questions,
                 "user_response": user_msg,
             }
+        # If no open questions but we have a user message (e.g., modification after approval),
+        # still pass it so the analyser knows what to change.
+        elif user_msg:
+            user_answers = {
+                "previous_questions": [],
+                "user_response": user_msg,
+            }
 
     payload = {
         "problem_description": problem_description,
         "previous_output": previous_output,
         "user_answers": user_answers,
     }
-    return json.dumps(payload, ensure_ascii=False, indent=2)
+    result = json.dumps(payload, ensure_ascii=False, indent=2)
+    return result
 
 
 # Node

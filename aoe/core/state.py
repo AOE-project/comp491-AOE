@@ -34,6 +34,13 @@ class GraphState(TypedDict):
     generated_code: str             # output of CodeGenerator
     code_syntax_error: str | None   # syntax error message from CodeGenerator, None if valid
 
+    # regeneration mechanisim (debug/errors)
+    last_execution_error: str | None        # solver/execution error message
+    debug_attempts: list                    # list of {"attempt": N, "error": str, "action": str}
+    last_error_type: str | None             # "syntax_error" | "runtime_error" | "modeling_error" | "unknown_error" | None
+    max_debug_attempts: int                 # default: 5
+    regeneration_attempts: int              # tracks multi-attempt recovery (1st broken, 2nd+ fixed)
+
     # Solver
     solver_result: dict             # output of SolverRunner
 
@@ -50,6 +57,9 @@ class GraphState(TypedDict):
     chat_response: str              # last response text from the chat agent
     chat_pending_modification: dict # proposed model change awaiting user approval
     chat_modification_approved: bool  # True when user approves a pending modification
+    is_regeneration: bool           # True when re-running the pipeline after a chat modification
+    regen_set_changes: bool         # True when the modification adds/removes set elements
+    regen_force_ask: list           # data_keys whose values must be re-collected even if present
 
     # Token tracking
     token_usage: dict

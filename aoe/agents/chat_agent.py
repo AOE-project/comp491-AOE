@@ -1,15 +1,19 @@
 """
 agents/chat_agent.py — ChatAgent.
 
-Inputs  (from GraphState): milp_model, solver_result, chat_history, history
-Output  (to  GraphState):  chat_response, chat_history, chat_modification_approved
+Inputs  (from GraphState): milp_model, solver_result, chat_history, history,
+                           chat_pending_modification
+Output  (to  GraphState):  chat_response, chat_history,
+                           chat_pending_modification, chat_modification_approved
 
-Post-solver interactive agent with two intents:
-  - explain  → answers the user's question in plain language, no model change
-  - modify   → signals that the user wants a model change; sets
-               chat_modification_approved=True so AOEHandle re-runs the
-               analyser (with the user's request as feedback) followed by
-               code_generator → solver → explainer.
+Post-solver interactive agent with four intents:
+  - explain              → answers the user's question; no model change
+  - propose_modification → describes the change and asks for yes/no confirmation;
+                           stores original user request in chat_pending_modification
+  - confirm_modification → user said yes; sets chat_modification_approved=True so
+                           AOEHandle re-runs the analyser (with the user's original
+                           request) followed by the full pipeline
+  - reject_modification  → user said no; clears chat_pending_modification
 """
 
 import json
@@ -61,9 +65,8 @@ def chat_agent_node(state: GraphState) -> dict:
     """
     LangGraph node for the Chat Agent.
 
-    Classifies the user's message as 'explain' or 'modify'.
-    For 'modify', sets chat_modification_approved=True so AOEHandle
-    can re-run the analyser with the user's feedback and re-optimise.
+    Classifies the user's message and signals AOEHandle. The chat agent never
+    modifies milp_model directly — modifications are applied by the analyser.
     """
     llm = get_llm_client()
     user_content = _build_user_message(state)
@@ -106,7 +109,6 @@ def chat_agent_node(state: GraphState) -> dict:
 
     intent = output.get("intent", "explain")
     response_text = output.get("response", "")
-    updated_model = output.get("updated_milp_model")
 
     current_user_message = (
         state["history"][-1]["content"] if state.get("history") else ""
@@ -123,21 +125,19 @@ def chat_agent_node(state: GraphState) -> dict:
         "costs": state.get("costs", {"total": 0.0, "by_agent": {}}),
     }
 
-    if intent == "propose_modification" and updated_model:
-        # Store the proposed change and wait for user confirmation.
+    if intent == "propose_modification":
+        # Store the original user request so AOEHandle can forward it to the analyser.
         updates["chat_pending_modification"] = {
             "description": response_text,
-            "updated_milp_model": updated_model,
+            "user_request": current_user_message,
+            "set_changes": bool(output.get("set_changes", False)),
+            "regen_force_ask": output.get("regen_force_ask") or [],
         }
 
     elif intent == "confirm_modification":
-        # User said yes — apply the pending (or LLM-returned) model.
-        pending = state.get("chat_pending_modification") or {}
-        approved_model = pending.get("updated_milp_model") or updated_model
-        if approved_model:
-            updates["milp_model"] = approved_model
-            updates["chat_modification_approved"] = True
-            updates["chat_pending_modification"] = None
+        # Signal AOEHandle to re-run analyser + pipeline with the original request.
+        updates["chat_modification_approved"] = True
+        updates["chat_pending_modification"] = None
 
     elif intent == "reject_modification":
         updates["chat_pending_modification"] = None
