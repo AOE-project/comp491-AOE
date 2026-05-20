@@ -1,0 +1,284 @@
+.editor {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.editor-sidebar {
+  width: 340px;
+  flex-shrink: 0;
+  background: white;
+  border-right: 1px solid #e1e5ec;
+  padding: 20px;
+  overflow-y: auto;
+  font-size: 14px;
+}
+
+.editor-sidebar h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.editor-sidebar h3 {
+  margin: 18px 0 8px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #4a5568;
+}
+
+.editor-sidebar .hint {
+  margin: 0 0 10px;
+  color: #4a5568;
+  line-height: 1.5;
+}
+
+.key-hints {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #4a5568;
+}
+
+.key-hints li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+kbd {
+  background: white;
+  border: 1px solid #cbd2dd;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  min-width: 24px;
+  text-align: center;
+}
+
+.editor-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.editor-controls button {
+  padding: 8px 6px;
+  border: 1px solid #cbd2dd;
+  background: white;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.editor-controls button:hover:not(:disabled) {
+  background: #eef3fa;
+  border-color: #4a90e2;
+}
+
+.editor-controls button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 10px 12px;
+  background: #f5f7fa;
+  border-radius: 6px;
+}
+
+.toggles label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.empty {
+  color: #6b7280;
+  font-style: italic;
+  font-size: 13px;
+  margin: 0;
+}
+
+.polygon-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 1px solid #e1e5ec;
+  border-radius: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.polygon-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid #f0f2f5;
+  gap: 8px;
+}
+
+.polygon-list li:last-child {
+  border-bottom: none;
+}
+
+.poly-name {
+  font-weight: 500;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.poly-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.poly-actions button {
+  background: none;
+  border: 1px solid #cbd2dd;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.poly-actions button:hover {
+  background: #f0f4f8;
+}
+
+.poly-actions .danger,
+.editor-export .danger {
+  color: #c0362c;
+  border-color: #e3b8b3;
+}
+
+.poly-actions .danger:hover,
+.editor-export .danger:hover {
+  background: #fbeae8;
+  border-color: #c0362c;
+}
+
+.editor-export {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.editor-export button {
+  padding: 10px;
+  border: 1px solid #cbd2dd;
+  background: white;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.editor-export .primary {
+  background: #4a90e2;
+  color: white;
+  border-color: #4a90e2;
+}
+
+.editor-export .primary:hover:not(:disabled) {
+  background: #3a7bc8;
+}
+
+.editor-export button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+details {
+  margin-bottom: 14px;
+}
+
+details summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: #4a5568;
+  padding: 6px 0;
+}
+
+.export-preview {
+  background: #1e2533;
+  color: #d8e1ee;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  max-height: 240px;
+  overflow: auto;
+  margin: 0;
+  white-space: pre;
+}
+
+.footer-hint {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 16px;
+  border-top: 1px solid #e1e5ec;
+  padding-top: 12px;
+}
+
+.footer-hint a {
+  color: #4a90e2;
+}
+
+.editor-map {
+  flex: 1;
+  overflow: auto;
+  background: #e8edf5;
+  padding: 16px;
+}
+
+.map-frame {
+  position: relative;
+  display: inline-block;
+  background: white;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.editor-img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 32px);
+  width: auto;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.editor-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.saved-polygon {
+  pointer-events: none;
+}
+
+.current-polygon {
+  pointer-events: none;
+}
