@@ -139,14 +139,24 @@ def explainer_node(state: GraphState) -> dict:
 
 def _route_after_analyser(state: GraphState) -> str:
     """
-    Advance to latex_generator when the user approves, or automatically during
-    re-optimisation (is_regeneration=True) when the analyser has no open questions.
-    Otherwise return END so AOEHandle can surface questions or the summary.
+    Advance to latex_generator when analysis is complete (no open questions).
+    LaTeX is generated before asking for approval, so the user can see the
+    formatted model before deciding to approve or request changes.
+    Otherwise return END to surface questions or summary for user input.
+    """
+    if not state.get("open_questions"):
+        return "latex_generator"
+    return END
+
+
+def _route_after_latex_generator(state: GraphState) -> str:
+    """
+    After LaTeX is generated, check if the user has approved the analysis.
+    If approved, proceed to input retrieval to collect parameters.
+    Otherwise, return END so the UI can ask for approval before continuing.
     """
     if state.get("analyser_approved"):
-        return "latex_generator"
-    if state.get("is_regeneration") and not state.get("open_questions"):
-        return "latex_generator"
+        return "input_retrieval"
     return END
 
 
@@ -215,7 +225,7 @@ _builder.add_node("explainer", explainer_node)
 
 _builder.set_entry_point("analyser")
 _builder.add_conditional_edges("analyser", _route_after_analyser)
-_builder.add_edge("latex_generator", "input_retrieval")
+_builder.add_conditional_edges("latex_generator", _route_after_latex_generator)
 _builder.add_conditional_edges("input_retrieval", _route_after_input_retrieval)
 _builder.add_edge("code_generator", "solver")
 

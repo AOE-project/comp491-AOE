@@ -47,6 +47,8 @@ REQUIREMENTS FOR THE GENERATED SCRIPT:
    - Keep the script flat — no helper functions, no classes.
    - Use list comprehensions and gp.quicksum for compact expressions.
    - Variable and constraint names must match the milp_model exactly.
+   - IMPORTANT: NEVER use Python reserved keywords (lambda, class, def, return, if, for, while, import, etc.) as variable names.
+     If you need to create a penalty weight variable, use names like 'lambda_weight', 'penalty_weight', or 'coefficient' instead.
 
 ---
 

@@ -12,6 +12,7 @@ Architecture:
 """
 
 import re
+import keyword
 from typing import Optional
 
 
@@ -57,18 +58,37 @@ class ErrorContext:
             "causes": [],
             "recovery_hints": []
         }
-        
+
         if self.error_type == "syntax_error":
-            analysis["causes"] = [
-                "Malformed Python syntax in generated code",
-                "Incorrect indentation or brackets",
-                "Invalid Gurobi method calls"
-            ]
-            analysis["recovery_hints"] = [
-                "Check Python syntax around the error line",
-                "Verify all brackets and parentheses are balanced",
-                "Ensure Gurobi API calls match function signatures"
-            ]
+            # Check for reserved keyword usage (e.g., "lambda = 100")
+            reserved_kw = None
+            for kw in keyword.kwlist:
+                if f"{kw} =" in self.generated_code or f"{kw}=" in self.generated_code:
+                    reserved_kw = kw
+                    break
+
+            if reserved_kw:
+                analysis["causes"] = [
+                    f"Using Python reserved keyword '{reserved_kw}' as a variable name",
+                    "Python does not allow reserved keywords to be assigned to",
+                    "Common reserved keywords: lambda, class, def, return, if, else, for, while, import, etc."
+                ]
+                analysis["recovery_hints"] = [
+                    f"Rename '{reserved_kw}' to something else (e.g., '{reserved_kw}_weight', '{reserved_kw}_param', 'penalty_{reserved_kw}')",
+                    "Use alternative variable names like 'weight', 'penalty', 'coefficient', or 'param'",
+                    "Avoid all Python reserved keywords when creating variables"
+                ]
+            else:
+                analysis["causes"] = [
+                    "Malformed Python syntax in generated code",
+                    "Incorrect indentation or brackets",
+                    "Invalid Gurobi method calls"
+                ]
+                analysis["recovery_hints"] = [
+                    "Check Python syntax around the error line",
+                    "Verify all brackets and parentheses are balanced",
+                    "Ensure Gurobi API calls match function signatures"
+                ]
         
         elif self.error_type == "runtime_error":
             # Extract variable name if possible
@@ -128,7 +148,7 @@ class ErrorContext:
     def to_llm_prompt(self, attempt_number: int = 1, previous_attempts: list = None) -> str:
         """
         Format a strategic prompt for the LLM recovery agent.
-        
+
         Includes:
         - Role instruction
         - Error context with traceback
@@ -137,7 +157,7 @@ class ErrorContext:
         - Previous attempts (if any)
         """
         previous_attempts = previous_attempts or []
-        
+
         prompt = f"""You are a Gurobi Programming Expert fixing a Mixed-Integer Linear Programming (MILP) optimization script.
 
 ## Error Context (Attempt #{attempt_number})
@@ -148,8 +168,15 @@ class ErrorContext:
 ## Potential Causes
 {chr(10).join(f"- {cause}" for cause in self.analysis['causes'])}
 
-## Recovery Hints
+## Recovery Hints (CRITICAL — Follow These)
 {chr(10).join(f"- {hint}" for hint in self.analysis['recovery_hints'])}
+"""
+
+        # Add extra emphasis if this is a repeated error
+        if attempt_number > 1:
+            prompt += f"\n⚠️  **ATTENTION**: This is attempt #{attempt_number} and the SAME error is occurring repeatedly.\nYou MUST identify and fix the root cause, not generate the same broken code."
+
+        prompt += f"""
 
 ## Generated Code (FAILED)
 ```python
@@ -171,6 +198,7 @@ class ErrorContext:
    - All set and parameter names match the model
    - Gurobi API calls are correct
    - Data dimensions match the model structure
+   - NO Python reserved keywords are used as variable names
 
 ## Previous Attempts (if any)
 {self._format_previous_attempts(previous_attempts)}
@@ -206,15 +234,20 @@ Now, provide the corrected code:
         """Format previous failed attempts for LLM context."""
         if not attempts:
             return "None — this is the first attempt."
-        
+
         lines = []
         for i, attempt in enumerate(attempts, 1):
             lines.append(f"\n### Attempt #{i}")
-            lines.append(f"**Error:** {attempt.get('error_message', 'Unknown')}")
-            lines.append(f"**Root cause identified as:** {attempt.get('identified_cause', 'Unknown')}")
-            if attempt.get('code'):
-                lines.append(f"**Code tried:**\n```python\n{attempt['code']}\n```")
-        
+            lines.append(f"**Error:** {attempt.get('error', 'Unknown')}")
+            error_type = attempt.get('error_type', 'unknown')
+            analysis = attempt.get('analysis', {})
+            causes = analysis.get('causes', [])
+            if causes:
+                lines.append(f"**Error Classification:** {error_type}")
+                lines.append(f"**Identified issues:**")
+                for cause in causes[:2]:  # Show top 2 causes
+                    lines.append(f"  - {cause}")
+
         return "\n".join(lines)
     
     def to_dict(self) -> dict:

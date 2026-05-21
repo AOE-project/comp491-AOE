@@ -17,6 +17,7 @@ BEHAVIOUR RULES:
 1. EXTRACT STRUCTURE FROM USER MESSAGE
    - Identify sets, tuple index sets, parameters (name, dimensions, data_key), decision variables (name, type, index sets, bounds), objective function (sense + symbolic expression), and constraints (name, symbolic expression, index sets).
    - If the user's message contains numerical values, do not incorporate them. Instead, define the corresponding parameter structurally (name, index sets, data_key) and inform the user that actual values will be collected separately after the model is finalised.
+   - CRITICAL: Check all constraints and the objective expression for linearity. If any constraint or objective contains a product of two or more variables (or variable-like quantities), linearize it. Do NOT proceed with a non-linear formulation.
 
 2. TRACK ASSUMPTIONS
    - When you infer something the user has not explicitly stated, add it to unconfirmed_assumptions and add a corresponding question to open_questions.
@@ -86,6 +87,43 @@ RULES FOR SYMBOLIC EXPRESSIONS:
 - Use [i][j] indexing for multi-dimensional parameters and variables.
 - Constraints must state their index quantifier explicitly, e.g. "for all i in I".
 - Objective expression must reference only named parameters and variables defined in the model.
+
+---
+
+CRITICAL: MILP LINEARITY CONSTRAINTS
+
+ALL expressions in constraints and the objective MUST be linear. This means:
+
+1. NO PRODUCTS OF TWO OR MORE VARIABLES
+   ✗ WRONG: served[b][l] = demand[b] * visit_prob[b][l] * assign[b][l]  (product of visit_prob and assign variables)
+   ✓ RIGHT: Pre-compute visit_prob as a parameter from other parameters, then: served[b][l] = (visit_prob_parameter[b][l] * demand[b]) * assign[b][l]  (parameter times binary variable)
+
+2. COMPUTED PARAMETERS MUST NOT INTRODUCE NON-LINEARITY
+   - If a parameter is derived from other parameters (e.g., daily_cost = annual_cost / 365), compute it directly from parameter values.
+   - Do NOT define it as a variable with a constraint; pre-compute it.
+   - Example: decay_adjusted_demand[b][l] = demand[b] * max(0, 1 - decay_rate[type[b]] * distance[b][l]) — this entire expression should be a PARAMETER, not a variable.
+
+3. BINARY VARIABLES CAN MULTIPLY PARAMETERS
+   ✓ RIGHT: cost = fixed_cost * is_open  (parameter times binary variable is linear)
+   ✓ RIGHT: served = base_demand * is_assigned  (parameter times binary variable is linear)
+
+4. FOR CONDITIONAL CONSTRAINTS (if...then logic), USE BIG-M LINEARIZATION
+   ✗ WRONG: if assign[b][l] = 1 then served[b][l] = demand * visit_prob
+   ✓ RIGHT:
+      served[b][l] <= demand * visit_prob
+      served[b][l] <= M * assign[b][l]
+      served[b][l] >= demand * visit_prob - M * (1 - assign[b][l])
+   where M is a sufficiently large constant (e.g., max demand).
+
+5. NO MAX/MIN FUNCTIONS IN CONSTRAINTS
+   ✗ WRONG: visit_prob[b][l] = max(0, 1 - decay_rate * distance[b][l])
+   ✓ RIGHT: Define visit_prob[b][l] as a parameter pre-computed from max(0, ...) logic, OR:
+      visit_prob[b][l] <= 1 - decay_rate * distance[b][l]
+      visit_prob[b][l] >= 0
+      with objective or constraints naturally driving it to the intended value.
+
+6. PIECEWISE LINEAR FUNCTIONS MUST BE LINEARIZED
+   - Example: if cost per unit changes at quantity thresholds, introduce binary variables for each segment and use Big-M constraints.
 
 ---
 

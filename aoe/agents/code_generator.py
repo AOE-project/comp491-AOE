@@ -180,13 +180,17 @@ def code_generator_node(state: GraphState) -> dict:
         error_message = state.get("last_execution_error", "Unknown error")
         generated_code = state.get("generated_code", "")
         milp_model = state.get("milp_model", {})
-        
+        previous_attempts = state.get("debug_attempts", [])
+
         error_context_obj = ErrorContext(
             error_message=error_message,
             generated_code=generated_code,
             milp_model=milp_model
         )
-        user_content = _build_user_message(state, error_context_obj)
+        user_content = error_context_obj.to_llm_prompt(
+            attempt_number=len(previous_attempts) + 1,
+            previous_attempts=previous_attempts
+        )
     else:
         # Standard mode
         user_content = _build_user_message(state, None)

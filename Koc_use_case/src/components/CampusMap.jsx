@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { buildings } from '../data/buildings.js'
+import demand from '../data/demand.json'
+import fixedCostDaily from '../data/fixed_cost_daily.json'
+import capacity from '../data/capacity.json'
 import Fireworks from './Fireworks.jsx'
 import './CampusMap.css'
 
@@ -10,8 +13,58 @@ const IMG_NATURAL_W = 3636
 const IMG_NATURAL_H = 4608
 const FIREWORKS_RANK_THRESHOLD = 3
 
-function calculateCost() {
-  return Math.floor(Math.random() * 101)
+let visitProb = null
+
+const MODEL_DATA = {
+  demand,
+  fixed_cost_daily: fixedCostDaily,
+  capacity,
+  visit_prob: null,
+  rev_per_customer: 150
+}
+
+async function loadVisitProb() {
+  if (!visitProb) {
+    const data = await import('../data/visit_prob.json')
+    visitProb = data.default
+    MODEL_DATA.visit_prob = visitProb
+  }
+  return visitProb
+}
+
+let costCache = {}
+
+async function calculateCost(selectedIds) {
+  if (selectedIds.length === 0) return 0
+
+  const cacheKey = selectedIds.sort().join(',')
+  if (costCache[cacheKey] !== undefined) {
+    return costCache[cacheKey]
+  }
+
+  const selectedNames = selectedIds
+    .map(id => buildings.find(b => b.id === id)?.name)
+    .filter(Boolean)
+
+  try {
+    const response = await fetch('http://127.0.0.1:5000/api/compute-score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shops: selectedNames })
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`)
+    }
+
+    const data = await response.json()
+    const result = data.score
+    costCache[cacheKey] = result
+    return result
+  } catch (err) {
+    console.error('Error calling score API:', err)
+    return null
+  }
 }
 
 function ordinal(n) {
@@ -36,6 +89,10 @@ export default function CampusMap({ username, onLogout, onSubmitScore }) {
   const [zoom, setZoom] = useState(1)
   const [baseSize, setBaseSize] = useState({ w: 0, h: 0 })
   const viewportRef = useRef(null)
+
+  useEffect(() => {
+    loadVisitProb().catch(err => console.error('Failed to load visit probability data:', err))
+  }, [])
 
   useEffect(() => {
     const compute = () => {
@@ -138,7 +195,12 @@ export default function CampusMap({ username, onLogout, onSubmitScore }) {
     const buildingNames = selected
       .map((id) => buildings.find((b) => b.id === id)?.name)
       .filter(Boolean)
-    const score = calculateCost()
+    const score = await calculateCost(selected)
+    if (score === null) {
+      setError('Failed to compute score')
+      setSubmitting(false)
+      return
+    }
     const record = {
       username,
       buildings: buildingNames.join(', '),

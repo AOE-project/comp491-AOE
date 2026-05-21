@@ -26,6 +26,7 @@ from core.logger import SessionLogger
 # ============ GLOBAL STATE ============
 _aoe_handle   = AOEHandle()
 _current_state: Optional[dict] = None
+_last_session_id: Optional[str] = None  # Track the session ID to prevent duplicate creation
 
 # ============ CORE HELPERS ============
 
@@ -285,17 +286,16 @@ def _build_pipeline_status(state: dict) -> str:
 
     CRITICAL LOGIC:
     - Analyser completes ONLY when: analysis exists AND approver approved AND no questions pending
-    - Otherwise, Analyser is ACTIVE (awaiting user approval or answers)
+    - Code Generator, Solver, Explainer follow sequentially
     """
     if not state:
         state = {}
 
     agents = [
         ("Analyser",        "analysis_summary"),
-        ("Input Retrieval", "input_retrieval_cursor"),
+        ("Data Retrieval",  "input_retrieval_cursor"),
         ("Code Generator",  "generated_code"),
         ("Solver",          "solver_result"),
-        ("Debug",           "last_error_type"),
         ("Explainer",       "explanation"),
     ]
 
@@ -305,40 +305,41 @@ def _build_pipeline_status(state: dict) -> str:
     analysis_summary      = (state.get("analysis_summary") or "").strip()
     is_approved           = state.get("analyser_approved", False)
     open_questions        = state.get("open_questions", [])
-    has_error_before_code = state.get("last_execution_error") and not state.get("generated_code")
+    has_error             = state.get("last_execution_error")
+    error_type            = state.get("last_error_type")
+    regeneration_attempts = state.get("regeneration_attempts", 0)
 
     if analysis_summary and is_approved and not open_questions:
-        completed.add(0)
+        completed.add(0)  # Analyser
 
         if not state.get("current_input_spec"):
-            completed.add(1)
+            completed.add(1)  # Data Retrieval done
 
             if state.get("generated_code"):
-                completed.add(2)
-
-                if state.get("solver_result"):
-                    completed.add(3)
-
-                    if state.get("last_execution_error"):
-                        if state.get("last_error_type") and state.get("regeneration_attempts", 0) > 0:
-                            completed.add(4)
-                            active = 2   # Code Generator regenerating
-                        elif state.get("last_error_type"):
-                            active = 4   # Debug classified, waiting to route
-                        else:
-                            active = 4   # Debug classification happening
+                # If we're regenerating after an error, Code Generator is active
+                if has_error and regeneration_attempts > 0:
+                    active = 2            # Code Generator regenerating
                 else:
-                    active = 3           # Solver running
+                    completed.add(2)      # Code Generator done
+
+                    if state.get("solver_result"):
+                        completed.add(3)  # Solver done
+
+                        if state.get("explanation"):
+                            completed.add(4)  # Explainer done
+                            active = -1       # All complete
+                        else:
+                            active = 4        # Explainer running
+                    else:
+                        active = 3            # Solver running
             else:
-                active = 2              # Code Generator running
+                active = 2                # Code Generator running
         else:
-            active = 1                  # Input Retrieval waiting
-    elif has_error_before_code:
-        active = 0
+            active = 1                    # Data Retrieval waiting for user input
     elif analysis_summary:
-        active = 0                      # Awaiting approval / answering questions
+        active = 0                        # Awaiting approval / answering questions
     else:
-        active = -1                     # Initial state
+        active = -1                       # Initial state
 
     result_html = '<div style="display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; align-items: center;">'
 
@@ -566,16 +567,18 @@ def _load_session_list():
 
         label = f"{title}\n{date_str}" if date_str else title
         choices.append((label, s["session_id"]))
-    active    = (_current_state or {}).get("session_id")
+
+    # Preserve the current session ID — prefer _last_session_id (recently used) over current_state
+    selected_id = _last_session_id or (_current_state or {}).get("session_id")
     valid_ids = {sid for _, sid in choices}
-    selected  = active if active in valid_ids else None
+    selected  = selected_id if selected_id in valid_ids else None
     return gr.update(choices=choices, value=selected)
 
 
 # ============ CALLBACKS ============
 
 def _process_message(user_message: str, chat_history: list):
-    global _current_state
+    global _current_state, _last_session_id
 
     user_message = (user_message or "").strip()
     if not user_message:
@@ -586,7 +589,19 @@ def _process_message(user_message: str, chat_history: list):
     ]
 
     try:
+        # Preserve session ID to prevent creating duplicate sessions
+        if _current_state is None:
+            _last_session_id = None
+        else:
+            _last_session_id = _current_state.get("session_id")
+
         _current_state = _aoe_handle.run(user_message, _current_state)
+
+        # Verify session ID hasn't changed unexpectedly
+        if _last_session_id and _current_state.get("session_id") != _last_session_id:
+            # Restore the original session ID if it changed
+            _current_state["session_id"] = _last_session_id
+
         outputs = _build_all_outputs(_current_state, chat_history, clear_msg=True)
         _current_state["chat_history"] = outputs[1]
         _aoe_handle.save(_current_state)
@@ -695,8 +710,9 @@ def _submit_param_data(file, df_value, chat_history: list):
 
 
 def _reset_session():
-    global _current_state, _aoe_handle
+    global _current_state, _aoe_handle, _last_session_id
     _current_state = None
+    _last_session_id = None
     _aoe_handle    = AOEHandle()
     return (
         gr.update(value="", interactive=True),       # msg_input
@@ -725,11 +741,12 @@ def _reset_session():
 
 def _resume_session(session_id: str):
     """Load a saved session and rebuild the UI."""
-    global _aoe_handle, _current_state
+    global _aoe_handle, _current_state, _last_session_id
     if not session_id:
         return (gr.update(),) * 14
     try:
         _aoe_handle, _current_state = AOEHandle.resume(session_id)
+        _last_session_id = session_id
     except Exception:
         return (gr.update(),) * 14
     chat_history = _current_state.get("chat_history") or []
