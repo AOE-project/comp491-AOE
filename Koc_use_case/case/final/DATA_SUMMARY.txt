@@ -1,0 +1,60 @@
+=== DONUT SHOP PLACEMENT - DATA FOR AOE SESSION ===
+Location: Koc_use_case/case/final/
+
+Generated: 2026-05-21
+Configuration: B=L (37 buildings can be shop locations)
+Horizon: 365 days
+Target: Open exactly 3 shops
+
+FILES GENERATED:
+================
+
+SETS (comma-separated in .txt):
+- B.txt (37 buildings - demand origins)
+- L.txt (37 buildings - shop location candidates, identical to B)
+
+PARAMETERS:
+
+1D Parameters (key-value .csv files):
+- base_daily_demand.csv: Daily demand for each building
+  * Academic/Other: 30 (arbitrary)
+  * Dormitories: 15 (arbitrary)
+  * Some buildings use historical values from original data
+
+- yearly_fixed_opening_cost.csv: One-time opening investment costs
+  * Academic/Other: 5000 TRY
+  * Dormitories: 3000 TRY
+
+- daily_capacity.csv: Max customers per shop per day
+  * Academic/Other: 80 customers
+  * Dormitories: 40 customers
+
+2D Parameter (matrix .csv file):
+- visit_probability_matrix.csv: 37x37 matrix
+  * Rows = origin buildings (B)
+  * Columns = shop locations (L)
+  * Values = visit probability based on distance decay
+  * Formula: max(0, 1 - decay_rate * distance)
+  * Decay rates: academic=0.3%/meter, dorm=0.5%/meter
+
+Scalar Parameters (.txt files):
+- planning_horizon_days.txt: 365
+- revenue_per_visit.txt: 50 TRY
+- number_of_shops_to_open.txt: 3
+
+CHARACTERISTICS:
+================
+- Total buildings: 37
+- Academic/Other buildings: 15
+- Dormitories: 22
+- Total base daily demand: ~1,100 customers
+- Average visit probability: ~0.45 (heavily distance-dependent)
+- Opening cost range: 3,000-5,000 TRY/year (13-42 TRY/day)
+- Revenue per visit: 50 TRY
+
+NOTES:
+======
+- All arbitrary values can be easily modified in the CSV files
+- Visit probability matrix is pre-computed and fully linear (MILP-compliant)
+- Distance data sourced from actual campus distance matrix
+- Dormitory classification from Koc University campus records

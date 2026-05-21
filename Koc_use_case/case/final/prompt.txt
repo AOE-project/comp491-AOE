@@ -1,0 +1,26 @@
+Donut Shop Placement on Campus
+Koç University wants to open a donut shop chain on campus to serve students and staff. The university has identified 10 ideal locations across the campus where donut shops could operate. However, due to budget and operational constraints, they can only open exactly 3 shops.
+
+Each location has a fixed opening cost (yearly investment) and a limited daily capacity for how many customers it can serve. The campus has 38 buildings where students and staff are located, and each building has a certain daily demand for donuts. For example, the library might have 35 potential customers per day, while a dormitory might have 15.
+
+The key challenge is that not everyone will visit a donut shop just because it's on campus. A person's willingness to visit depends on how far the shop is from their building. For dormitory residents, the visit rate decreases by 0.5% for every meter away from the shop. For academic and administrative buildings, the decay is at 0.3% per meter. So if a shop is 100 meters away, students from a dormitory might only be 50% as likely to visit, while students from an academic building might be 70% as likely.
+
+Students will always go to an open donut shop if it's worth the walk (i.e., the visit probability is still positive). If all shops are too far away, they won't visit at all.
+
+Each customer who visits generates a fixed amount of revenue. The goal is to choose which 3 locations to open shops to maximize daily revenue. We need to make sure that the number of customers served at each shop doesn't exceed its capacity.
+
+We can provide you with:
+- A list of candidate shop locations
+- A list of campus buildings
+- The base daily demand from each building
+- A visit probability matrix for every building-location pair
+- The yearly fixed opening cost for each candidate location
+- The daily capacity limit for each candidate location
+- The revenue earned per customer visit
+- The number of days in the planning horizon, used to convert yearly opening costs into daily costs
+
+Your job is to determine:
+- which 3 shop locations to open,
+- which open shop each building is assigned to,
+- and how many customers each shop serves,
+in order to maximize net daily profit: daily revenue minus the daily equivalent of the yearly opening costs.

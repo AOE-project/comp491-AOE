@@ -38,3 +38,5 @@ htmlcov/
 local/
 aoe/sessions/
 docs/
+Koc_use_case/node_modules/
+Koc_use_case/package-lock.json
